@@ -1,15 +1,17 @@
-import React, { useState, useEffect } from 'react';
-import { Camera, Volume2, Eye, Armchair as Wheelchair, LogOut, CheckCircle, AlertCircle, MapPin, ArrowLeft } from 'lucide-react';
+import React, { useState, useEffect, useCallback } from 'react';
+import { Camera, Volume2, Eye, Armchair as Wheelchair, LogOut, CheckCircle, AlertCircle, MapPin, ArrowLeft, Clock, AlertTriangle, LayoutDashboard } from 'lucide-react';
 import { PartyCard } from './PartyCard';
-import { VoteConfirmation } from './VoteConfirmation';
 import { CameraMonitor } from './CameraMonitor';
 import { SecurityBreachModal } from './SecurityBreachModal';
 import { VotingCertificate } from './VotingCertificate';
+import { Web3VotingModal, VoteMintData } from './Web3VotingModal';
+import { Web3VoteSuccess } from './Web3VoteSuccess';
+import { MyVotesDashboard } from './MyVotesDashboard';
 import { Party, User, VotingRegion } from '../../types';
 
 interface VotingInterfaceProps {
   parties: Party[];
-  onVote: (partyId: string) => Promise<boolean>;
+  onVote: (partyId: string, candidateName: string, partyName: string) => Promise<boolean>;
   onLogout: () => void;
   onStartDisabledVoting: () => void;
   userEmail: string;
@@ -19,6 +21,32 @@ interface VotingInterfaceProps {
   user?: User | null;
   selectedRegion?: VotingRegion;
   onBack?: () => void;
+  electionStartDate?: string | Date;
+  electionEndDate?: string | Date;
+}
+
+type ElectionTimeStatus = 'before' | 'active' | 'ended' | 'unknown';
+
+function formatCountdown(ms: number): string {
+  if (ms <= 0) return '0s';
+  const totalSeconds = Math.floor(ms / 1000);
+  const days = Math.floor(totalSeconds / 86400);
+  const hours = Math.floor((totalSeconds % 86400) / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+  const parts: string[] = [];
+  if (days > 0) parts.push(`${days}d`);
+  if (hours > 0) parts.push(`${hours}h`);
+  if (minutes > 0) parts.push(`${minutes}m`);
+  parts.push(`${seconds}s`);
+  return parts.join(' ');
+}
+
+function formatDateTime(date: Date): string {
+  return date.toLocaleString(undefined, {
+    year: 'numeric', month: 'short', day: 'numeric',
+    hour: '2-digit', minute: '2-digit'
+  });
 }
 
 export const VotingInterface: React.FC<VotingInterfaceProps> = ({
@@ -32,10 +60,15 @@ export const VotingInterface: React.FC<VotingInterfaceProps> = ({
   showVoteButton,
   user,
   selectedRegion,
-  onBack
+  onBack,
+  electionStartDate,
+  electionEndDate
 }) => {
   const [selectedParty, setSelectedParty] = useState<string | null>(null);
-  const [showConfirmation, setShowConfirmation] = useState(false);
+  const [showWeb3Modal, setShowWeb3Modal] = useState(false);
+  const [showWeb3Success, setShowWeb3Success] = useState(false);
+  const [showMyVotes, setShowMyVotes] = useState(false);
+  const [mintData, setMintData] = useState<VoteMintData | null>(null);
   const [highContrast, setHighContrast] = useState(false);
   const [audioEnabled, setAudioEnabled] = useState(false);
   const [cameraEnabled, setCameraEnabled] = useState(false);
@@ -44,6 +77,40 @@ export const VotingInterface: React.FC<VotingInterfaceProps> = ({
   const [showCertificate, setShowCertificate] = useState(false);
   const [votingComplete, setVotingComplete] = useState(false);
   const [eligibilityError, setEligibilityError] = useState<string | null>(null);
+
+  // Election time status tracking
+  const [electionStatus, setElectionStatus] = useState<ElectionTimeStatus>('unknown');
+  const [timeRemaining, setTimeRemaining] = useState<string>('');
+
+  // Parse election dates
+  const parsedStart = electionStartDate ? new Date(electionStartDate) : null;
+  const parsedEnd = electionEndDate ? new Date(electionEndDate) : null;
+
+  // Update election time status every second
+  const updateElectionStatus = useCallback(() => {
+    if (!parsedStart || !parsedEnd || isNaN(parsedStart.getTime()) || isNaN(parsedEnd.getTime())) {
+      setElectionStatus('unknown');
+      setTimeRemaining('');
+      return;
+    }
+    const now = new Date();
+    if (now < parsedStart) {
+      setElectionStatus('before');
+      setTimeRemaining(formatCountdown(parsedStart.getTime() - now.getTime()));
+    } else if (now >= parsedStart && now <= parsedEnd) {
+      setElectionStatus('active');
+      setTimeRemaining(formatCountdown(parsedEnd.getTime() - now.getTime()));
+    } else {
+      setElectionStatus('ended');
+      setTimeRemaining('');
+    }
+  }, [parsedStart, parsedEnd]);
+
+  useEffect(() => {
+    updateElectionStatus();
+    const interval = setInterval(updateElectionStatus, 1000);
+    return () => clearInterval(interval);
+  }, [updateElectionStatus]);
 
   // Get current election ID (from selected region or default)
   const currentElectionId = selectedRegion?.activeElections?.[0]?.id || 'default_election';
@@ -67,38 +134,56 @@ export const VotingInterface: React.FC<VotingInterfaceProps> = ({
   };
 
   const handleVoteClick = () => {
-    if (selectedParty) {
-      setShowConfirmation(true);
+    if (!selectedParty) return;
+
+    // Time-window guard before opening modal
+    if (electionStatus === 'before' && parsedStart) {
+      setEligibilityError(`Voting has not started yet. The election begins on ${formatDateTime(parsedStart)}.`);
+      return;
     }
+    if (electionStatus === 'ended' && parsedEnd) {
+      setEligibilityError(`The election period has ended. Voting closed on ${formatDateTime(parsedEnd)}.`);
+      return;
+    }
+
+    setEligibilityError(null);
+    setShowWeb3Modal(true);
   };
 
-  const handleConfirmVote = async () => {
-    if (selectedParty) {
-      console.log('🗳️ Starting vote confirmation for party:', selectedParty);
-      setEligibilityError(null);
-      
-      try {
-        // Call the main vote handler - it has all the backend verification
-        const success = await onVote(selectedParty);
-        console.log('✅ Vote result:', success);
-        
-        if (success) {
-          setVotingComplete(true);
-          setShowCertificate(true);
-          console.log('🎉 Vote completed successfully, showing certificate');
-        } else {
-          setEligibilityError('Failed to record vote. Please try again.');
-        }
-      } catch (error) {
-        console.error('❌ Vote confirmation failed:', error);
-        setEligibilityError(error instanceof Error ? error.message : 'Voting failed. Please try again.');
+  // Called by Web3VotingModal to submit the actual vote
+  const handleWeb3Vote = async (): Promise<boolean> => {
+    if (!selectedParty) return false;
+    const selectedPartyData = parties.find(p => p.id === selectedParty);
+    try {
+      const success = await onVote(
+        selectedParty,
+        selectedPartyData?.name ?? selectedParty,
+        selectedPartyData?.description ?? selectedParty
+      );
+      if (success) {
+        setVotingComplete(true);
       }
-      setShowConfirmation(false);
+      return success;
+    } catch (error) {
+      console.error('❌ Vote submission failed:', error);
+      return false;
     }
   };
 
-  const handleCancelVote = () => {
-    setShowConfirmation(false);
+  const handleWeb3Success = (data: VoteMintData) => {
+    setMintData(data);
+    setShowWeb3Modal(false);
+    setShowWeb3Success(true);
+    setShowCertificate(false);
+  };
+
+  const handleWeb3Cancel = () => {
+    setShowWeb3Modal(false);
+  };
+
+  const handleGoToDashboard = () => {
+    setShowWeb3Success(false);
+    setShowMyVotes(true);
   };
 
   const toggleAudioGuide = () => {
@@ -138,7 +223,7 @@ export const VotingInterface: React.FC<VotingInterfaceProps> = ({
         <VotingCertificate
           isVisible={showCertificate}
           voterData={{
-            id: user?.id || userEmail.split('@')[0],
+            id: user?.voterID || user?.id || userEmail.split('@')[0],
             email: userEmail,
             name: 'Verified Voter',
             constituency: 'General Constituency',
@@ -151,12 +236,12 @@ export const VotingInterface: React.FC<VotingInterfaceProps> = ({
           }}
           onClose={() => setShowCertificate(false)}
         />
-        
+
         <div className="bg-black/10 backdrop-blur-lg rounded-3xl shadow-2xl p-8 w-full max-w-md border border-black/20 text-center">
           <CheckCircle className="w-16 h-16 text-green-400 mx-auto mb-4" />
           <h2 className="text-2xl font-bold text-black mb-4">Vote Cast Successfully!</h2>
           <p className="text-gray-700 mb-6">Thank you for participating in the democratic process.</p>
-          
+
           <button
             onClick={() => setShowCertificate(true)}
             className="w-full py-3 mb-4 bg-gradient-to-r from-blue-500 to-green-600 
@@ -167,7 +252,7 @@ export const VotingInterface: React.FC<VotingInterfaceProps> = ({
           >
             Download Voting Certificate
           </button>
-          
+
           <button
             onClick={onLogout}
             className="w-full py-3 bg-gradient-to-r from-orange-500 to-green-600 
@@ -206,19 +291,7 @@ export const VotingInterface: React.FC<VotingInterfaceProps> = ({
           WebkitBackdropFilter: 'blur(15px)',
           boxShadow: '0 8px 25px rgba(0,0,0,0.1)',
           border: '1px solid rgba(255,255,255,0.3)'
-        }} className="rounded-lg p-3 mb-4 max-w-7xl mx-auto">
-          <div className="flex items-center justify-center">
-            <MapPin className="h-5 w-5 text-gray-600 mr-2" />
-            <div className="text-center">
-              <h3 className="font-semibold text-gray-800">Voting Region: {selectedRegion.name}</h3>
-              <p className="text-sm text-gray-700">
-                {selectedRegion.constituency} • {selectedRegion.district}, {selectedRegion.state}
-              </p>
-              <p className="text-xs text-gray-600 mt-1">
-                {selectedRegion.totalVoters.toLocaleString()} registered voters
-              </p>
-            </div>
-          </div>
+        }} className="rounded-lg p-3 mb-4 max-w-7xl mx-auto hidden">
         </div>
       )}
 
@@ -246,23 +319,21 @@ export const VotingInterface: React.FC<VotingInterfaceProps> = ({
         <div className="flex flex-wrap gap-2 sm:gap-3 items-center justify-center">
           <button
             onClick={() => setHighContrast(!highContrast)}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition-all duration-300 text-sm ${
-              highContrast 
-                ? 'bg-blue-500 text-black shadow-lg' 
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition-all duration-300 text-sm ${highContrast
+                ? 'bg-blue-500 text-black shadow-lg'
                 : 'bg-black/10 text-black border border-black/20 hover:bg-black/20'
-            }`}
+              }`}
           >
             <Eye className="w-4 h-4" />
             High Contrast
           </button>
-          
+
           <button
             onClick={toggleAudioGuide}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition-all duration-300 text-sm ${
-              audioEnabled 
-                ? 'bg-green-500 text-black shadow-lg' 
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition-all duration-300 text-sm ${audioEnabled
+                ? 'bg-green-500 text-black shadow-lg'
                 : 'bg-black/10 text-black border border-black/20 hover:bg-black/20'
-            }`}
+              }`}
           >
             <Volume2 className="w-4 h-4" />
             Audio Guide
@@ -278,14 +349,23 @@ export const VotingInterface: React.FC<VotingInterfaceProps> = ({
 
           <button
             onClick={() => setCameraEnabled(!cameraEnabled)}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition-all duration-300 text-sm ${
-              cameraEnabled 
-                ? 'bg-orange-500 text-black shadow-lg' 
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition-all duration-300 text-sm ${cameraEnabled
+                ? 'bg-orange-500 text-black shadow-lg'
                 : 'bg-black/10 text-black border border-black/20 hover:bg-black/20'
-            }`}
+              }`}
           >
             <Camera className="w-4 h-4" />
             Camera Monitor
+          </button>
+
+          {/* My Votes Button */}
+          <button
+            onClick={() => setShowMyVotes(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-500/20 text-indigo-700 border border-indigo-500/30 rounded-lg hover:bg-indigo-500/30 hover:text-indigo-900 transition-all duration-300 text-sm"
+            title="My Votes"
+          >
+            <LayoutDashboard className="w-4 h-4" />
+            My Votes
           </button>
 
           {/* Logout Button */}
@@ -300,6 +380,51 @@ export const VotingInterface: React.FC<VotingInterfaceProps> = ({
         </div>
       </div>
 
+      {/* Election Time Status Banner */}
+      {electionStatus !== 'unknown' && (
+        <div className="max-w-7xl mx-auto mb-4">
+          {electionStatus === 'before' && parsedStart && (
+            <div className="bg-amber-50 border-2 border-amber-300 rounded-xl p-4 flex items-center gap-3 shadow-sm">
+              <Clock className="h-6 w-6 text-amber-600 flex-shrink-0" />
+              <div className="flex-1">
+                <h4 className="font-semibold text-amber-800">Voting Has Not Started Yet</h4>
+                <p className="text-sm text-amber-700">
+                  The election begins on <strong>{formatDateTime(parsedStart)}</strong>
+                </p>
+                <p className="text-sm text-amber-600 mt-1">
+                  Starts in: <strong>{timeRemaining}</strong>
+                </p>
+              </div>
+            </div>
+          )}
+          {electionStatus === 'active' && parsedEnd && (
+            <div className="bg-green-50 border-2 border-green-300 rounded-xl p-4 flex items-center gap-3 shadow-sm">
+              <CheckCircle className="h-6 w-6 text-green-600 flex-shrink-0" />
+              <div className="flex-1">
+                <h4 className="font-semibold text-green-800">Voting is Open</h4>
+                <p className="text-sm text-green-700">
+                  Voting closes on <strong>{formatDateTime(parsedEnd)}</strong>
+                </p>
+                <p className="text-sm text-green-600 mt-1">
+                  Time remaining: <strong>{timeRemaining}</strong>
+                </p>
+              </div>
+            </div>
+          )}
+          {electionStatus === 'ended' && parsedEnd && (
+            <div className="bg-red-50 border-2 border-red-400 rounded-xl p-4 flex items-center gap-3 shadow-sm">
+              <AlertTriangle className="h-6 w-6 text-red-600 flex-shrink-0" />
+              <div className="flex-1">
+                <h4 className="font-bold text-red-800 text-lg">Election Period Has Ended</h4>
+                <p className="text-sm text-red-700">
+                  Voting closed on <strong>{formatDateTime(parsedEnd)}</strong>. Votes can no longer be submitted.
+                </p>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Main Content */}
       <div className="max-w-7xl mx-auto px-4">
         <div className="text-center mb-6">
@@ -307,10 +432,10 @@ export const VotingInterface: React.FC<VotingInterfaceProps> = ({
             Select Your Political Party
           </h2>
           <p className="text-gray-700 max-w-2xl mx-auto text-sm sm:text-base">
-            Choose your preferred political party by clicking on their card. 
+            Choose your preferred political party by clicking on their card.
             Review your selection carefully before casting your vote.
           </p>
-          <div 
+          <div
             style={{
               background: 'rgba(255, 255, 255, 0.85)',
               backdropFilter: 'blur(10px)',
@@ -379,13 +504,36 @@ export const VotingInterface: React.FC<VotingInterfaceProps> = ({
 
       </div>
 
-      {/* Vote Confirmation Modal */}
-      {showConfirmation && selectedParty && (
-        <VoteConfirmation
+      {/* Web3 Voting Modal — Steps 1 & 2 */}
+      {showWeb3Modal && selectedParty && (
+        <Web3VotingModal
           party={parties.find(p => p.id === selectedParty)!}
-          onConfirm={handleConfirmVote}
-          onCancel={handleCancelVote}
-          isLoading={isLoading}
+          electionName={
+            selectedRegion?.activeElections?.[0]?.name ||
+            selectedRegion?.name ||
+            'General Election 2026'
+          }
+          onVote={handleWeb3Vote}
+          onCancel={handleWeb3Cancel}
+          onSuccess={handleWeb3Success}
+        />
+      )}
+
+      {/* Web3 Vote Success — Step 3 */}
+      {showWeb3Success && mintData && (
+        <Web3VoteSuccess
+          data={mintData}
+          onDashboard={handleGoToDashboard}
+        />
+      )}
+
+      {/* My Votes Dashboard — Step 4 */}
+      {showMyVotes && (
+        <MyVotesDashboard
+          onClose={() => {
+            setShowMyVotes(false);
+            onLogout();
+          }}
         />
       )}
     </div>

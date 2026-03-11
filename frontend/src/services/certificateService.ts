@@ -1,4 +1,20 @@
-﻿interface VotingCertificate {
+﻿import { jsPDF } from 'jspdf';
+import QRCode from 'qrcode';
+
+// ─── Colors (India Tricolor theme) ───────────────────────────────────────────
+const C = {
+  saffron:    '#FF9933',
+  saffronDark:'#E8871A',
+  green:      '#138808',
+  cream:      '#FFFDF5',
+  navy:       '#1A1A2E',
+  slate:      '#64748B',
+  blue:       '#1D4ED8',
+  verified:   '#16A34A',
+  white:      '#FFFFFF',
+} as const;
+
+export interface VotingCertificate {
   voterId: string;
   voterName: string;
   voterEmail: string;
@@ -10,62 +26,70 @@
   constituency: string;
   electionType: string;
   securityHash: string;
+  certNo: string;
   verificationUrl?: string;
   networkName?: string;
 }
 
+// Helper — hex to jsPDF rgb array [r, g, b]
+function hex(h: string): [number, number, number] {
+  const v = h.replace('#', '');
+  return [parseInt(v.slice(0,2),16), parseInt(v.slice(2,4),16), parseInt(v.slice(4,6),16)];
+}
+
 class CertificateService {
-  // Mask email address for privacy and security (show first letter)
+
+  // Privacy masking — e.g. XOG6984330 → XO******30
+  private maskVoterId(id: string): string {
+    if (!id || id.length <= 4) return id;
+    return `${id.slice(0, 2)}${'*'.repeat(id.length - 4)}${id.slice(-2)}`;
+  }
+
   private maskEmail(email: string): string {
     if (!email || !email.includes('@')) return '***@***.***';
-    const [localPart, domain] = email.split('@');
-    const domainParts = domain.split('.');
-    const maskedLocal = localPart.charAt(0) + '***';
-    const maskedDomain = domainParts.map((part, index) => 
-      index === domainParts.length - 1 ? part : '***'
-    ).join('.');
-    return `${maskedLocal}@${maskedDomain}`;
+    const [local, domain] = email.split('@');
+    const maskedLocal = local.length <= 4
+      ? local.charAt(0) + '*'.repeat(local.length - 1)
+      : `${local.slice(0, 2)}${'*'.repeat(local.length - 4)}${local.slice(-2)}`;
+    return `${maskedLocal}@${domain}`;
   }
 
-  // Mask voter ID (show first 4 and last 4 characters)
-  private maskVoterId(id: string): string {
-    if (id.length <= 8) return id;
-    return `${id.slice(0, 4)}${'*'.repeat(id.length - 8)}${id.slice(-4)}`;
-  }
-
-  // Truncate transaction hash
   private truncateHash(hash: string): string {
-    if (hash.length <= 16) return hash;
-    return `${hash.slice(0, 10)}...${hash.slice(-6)}`;
+    if (!hash || hash.length <= 20) return hash;
+    return `${hash.slice(0, 10)}...${hash.slice(-8)}`;
   }
 
   generateTransactionId(): string {
-    const timestamp = Date.now().toString(36);
-    const random = Math.random().toString(36).substr(2, 9);
-    return `TXN_${timestamp}_${random}`.toUpperCase();
+    const ts  = Date.now().toString(36).toUpperCase();
+    const rnd = Math.random().toString(36).substr(2, 8).toUpperCase();
+    return `TXN-${ts}-${rnd}`;
   }
 
   generateBlockchainHash(): string {
-    const data = Date.now() + Math.random();
-    return `0x${data.toString(16).padStart(64, '0')}`;
+    const n = Date.now() + Math.random() * 1e10;
+    return `0x${Math.abs(n).toString(16).padStart(64, '0')}`;
   }
 
   generateSecurityHash(voterId: string, transactionId: string): string {
-    const combined = voterId + transactionId + Date.now();
-    let hash = 0;
-    for (let i = 0; i < combined.length; i++) {
-      const char = combined.charCodeAt(i);
-      hash = ((hash << 5) - hash) + char;
-      hash = hash & hash; // Convert to 32-bit integer
+    const raw = voterId + transactionId + Date.now();
+    let h = 0;
+    for (let i = 0; i < raw.length; i++) {
+      h = Math.imul(31, h) + raw.charCodeAt(i);
     }
-    return Math.abs(hash).toString(16).toUpperCase();
+    return (h >>> 0).toString(16).toUpperCase().padStart(8, '0');
   }
 
+  private generateCertNo(securityHash: string): string {
+    return `VOTE-2026-${securityHash.slice(0, 8)}`;
+  }
+
+  // ─── Public: generate certificate data object ───────────────────────────
   async generateCertificate(voterData: {
     voterId: string;
     voterName: string;
     voterEmail: string;
     constituency?: string;
+    electionType?: string;
     blockchainData?: {
       transactionHash: string;
       blockNumber: number;
@@ -73,219 +97,228 @@ class CertificateService {
       networkName?: string;
     };
   }): Promise<VotingCertificate> {
-    // Use real blockchain data if available, otherwise generate mock data
-    const transactionId = voterData.blockchainData?.transactionHash || this.generateTransactionId();
-    const blockchainHash = voterData.blockchainData?.transactionHash || this.generateBlockchainHash();
-    const blockNumber = voterData.blockchainData?.blockNumber;
-    const blockHash = voterData.blockchainData?.blockHash;
-    const networkName = voterData.blockchainData?.networkName || 'Sepolia Testnet';
-    
-    const securityHash = this.generateSecurityHash(voterData.voterId, transactionId);
-    
-    // Generate verification URL for blockchain explorer
-    const verificationUrl = voterData.blockchainData?.transactionHash 
+    const transactionId   = voterData.blockchainData?.transactionHash || this.generateTransactionId();
+    const blockchainHash  = voterData.blockchainData?.transactionHash || this.generateBlockchainHash();
+    const blockNumber     = voterData.blockchainData?.blockNumber;
+    const blockHash       = voterData.blockchainData?.blockHash;
+    const networkName     = voterData.blockchainData?.networkName || 'Hardhat / Ethereum';
+    const securityHash    = this.generateSecurityHash(voterData.voterId, transactionId);
+    const certNo          = this.generateCertNo(securityHash);
+    const verificationUrl = voterData.blockchainData?.transactionHash
       ? `https://sepolia.etherscan.io/tx/${voterData.blockchainData.transactionHash}`
-      : undefined;
+      : `https://votelink.in/verify/${certNo}`;
 
     return {
-      voterId: voterData.voterId,
-      voterName: voterData.voterName,
-      voterEmail: voterData.voterEmail,
-      votingDate: new Date(),
+      voterId:        voterData.voterId,           // real ID from voter profile
+      voterName:      voterData.voterName,
+      voterEmail:     voterData.voterEmail,
+      votingDate:     new Date(),
       transactionId,
       blockchainHash,
       blockNumber,
       blockHash,
-      constituency: voterData.constituency || 'General Constituency',
-      electionType: 'General Election 2026',
+      constituency:   voterData.constituency  || 'General Constituency',
+      electionType:   voterData.electionType  || 'General Election 2026',
       securityHash,
+      certNo,
       verificationUrl,
-      networkName
+      networkName,
     };
   }
 
+  // ─── Public: build & download the PDF ───────────────────────────────────
   async downloadCertificate(certificate: VotingCertificate): Promise<void> {
-    // Create certificate HTML
-    const certificateHTML = this.generateCertificateHTML(certificate);
-    
-    // Create a temporary div to render the certificate
-    const tempDiv = document.createElement('div');
-    tempDiv.innerHTML = certificateHTML;
-    tempDiv.style.position = 'absolute';
-    tempDiv.style.left = '-9999px';
-    tempDiv.style.background = 'black';
-    tempDiv.style.padding = '40px';
-    tempDiv.style.width = '800px';
-    document.body.appendChild(tempDiv);
+    const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+    const W   = 210;  // A4 width mm
+    const H   = 297;  // A4 height mm
 
-    try {
-      // Use html2canvas to convert to image, then to PDF
-      const canvas = await (window as any).html2canvas(tempDiv, {
-        backgroundColor: '#ffffff',
-        scale: 2,
-        useCORS: true
-      });
+    // ── Page background (cream) ────────────────────────────────────────────
+    pdf.setFillColor(...hex(C.cream));
+    pdf.rect(0, 0, W, H, 'F');
 
-      // Create PDF
-      const { jsPDF } = (window as any);
-      const pdf = new jsPDF('p', 'mm', 'a4');
-      
-      const imgData = canvas.toDataURL('image/png');
-      const imgWidth = 210; // A4 width in mm
-      const pageHeight = 295; // A4 height in mm
-      const imgHeight = (canvas.height * imgWidth) / canvas.width;
-      let heightLeft = imgHeight;
+    // ── Outer gold border ──────────────────────────────────────────────────
+    pdf.setDrawColor(...hex(C.saffronDark));
+    pdf.setLineWidth(1.2);
+    pdf.rect(6, 6, W - 12, H - 12);
+    pdf.setLineWidth(0.4);
+    pdf.rect(8, 8, W - 16, H - 16);
 
-      let position = 0;
+    // ── HEADER — saffron band ──────────────────────────────────────────────
+    pdf.setFillColor(...hex(C.saffron));
+    pdf.rect(6, 6, W - 12, 38, 'F');
 
-      pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
-      heightLeft -= pageHeight;
+    // Flag emoji row (Unicode — fallback to text on some renderers)
+    pdf.setFont('helvetica', 'bold');
+    pdf.setFontSize(15);
+    pdf.setTextColor(...hex(C.white));
+    pdf.text('ELECTION COMMISSION OF INDIA', W / 2, 18, { align: 'center' });
 
-      while (heightLeft >= 0) {
-        position = heightLeft - imgHeight;
-        pdf.addPage();
-        pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
-        heightLeft -= pageHeight;
+    pdf.setFontSize(11);
+    pdf.setFont('helvetica', 'normal');
+    pdf.text('OFFICIAL VOTING CERTIFICATE', W / 2, 25, { align: 'center' });
+
+    // Thin white rule under subtitle
+    pdf.setDrawColor(...hex(C.white));
+    pdf.setLineWidth(0.4);
+    pdf.line(40, 28, W - 40, 28);
+
+    pdf.setFontSize(8);
+    pdf.text('Issued under the authority of the Election Commission of India', W / 2, 33, { align: 'center' });
+
+    // ── Green stripe under header ──────────────────────────────────────────
+    pdf.setFillColor(...hex(C.green));
+    pdf.rect(6, 44, W - 12, 4, 'F');
+
+    // ── Certificate Meta ───────────────────────────────────────────────────
+    let y = 55;
+    pdf.setFont('helvetica', 'bold');
+    pdf.setFontSize(8);
+    pdf.setTextColor(...hex(C.slate));
+    pdf.text('CERTIFICATE NO', 15, y);
+    pdf.text('ISSUED ON', W / 2 + 5, y);
+
+    pdf.setFont('helvetica', 'bold');
+    pdf.setFontSize(9);
+    pdf.setTextColor(...hex(C.navy));
+    pdf.text(certificate.certNo, 15, y + 5);
+    pdf.text(
+      certificate.votingDate.toLocaleString('en-IN', {
+        day: '2-digit', month: 'long', year: 'numeric',
+        hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'Asia/Kolkata'
+      }) + ' IST',
+      W / 2 + 5, y + 5
+    );
+
+    // ── Section divider helper ─────────────────────────────────────────────
+    const sectionTitle = (title: string, yPos: number) => {
+      pdf.setFillColor(...hex(C.green));
+      pdf.rect(15, yPos, W - 30, 5.5, 'F');
+      pdf.setFont('helvetica', 'bold');
+      pdf.setFontSize(8);
+      pdf.setTextColor(...hex(C.white));
+      pdf.text(title, 18, yPos + 3.8);
+      return yPos + 9;
+    };
+
+    // ── Field helper ───────────────────────────────────────────────────────
+    const field = (label: string, value: string, xL: number, xV: number, yPos: number, mono = false) => {
+      pdf.setFont('helvetica', 'bold');
+      pdf.setFontSize(7.5);
+      pdf.setTextColor(...hex(C.slate));
+      pdf.text(label, xL, yPos);
+
+      if (mono) {
+        pdf.setFillColor(235, 242, 255);
+        pdf.roundedRect(xV - 1, yPos - 3.5, 85, 5.5, 1, 1, 'F');
       }
 
-      // Download the PDF
-      pdf.save(`Voting_Certificate_${certificate.transactionId}.pdf`);
-    } catch (error) {
-      console.error('Error generating certificate:', error);
-      // Fallback: download as text file
-      this.downloadAsText(certificate);
-    } finally {
-      document.body.removeChild(tempDiv);
+      pdf.setFont(mono ? 'courier' : 'helvetica', 'normal');
+      pdf.setFontSize(8.5);
+      pdf.setTextColor(...hex(mono ? C.blue : C.navy));
+      pdf.text(value, xV, yPos, { maxWidth: 83 });
+    };
+
+    // ── VOTER DETAILS section ──────────────────────────────────────────────
+    y = 72;
+    y = sectionTitle('VOTER DETAILS', y);
+
+    field('Voter Name',   certificate.voterName,                   15, 48, y);
+    // Real voter ID — masked for privacy (first 4 + asterisks + last 4)
+    field('Voter ID',     this.maskVoterId(certificate.voterId),   15, 48, y + 8, true);
+    field('Email',        this.maskEmail(certificate.voterEmail),  15, 48, y + 16);
+    field('Constituency', certificate.constituency,                W/2 + 5, W/2 + 38, y);
+    field('Election',     certificate.electionType,                W/2 + 5, W/2 + 38, y + 8);
+    field('Election Type',certificate.electionType.split(' ')[0] || 'LOCAL', W/2 + 5, W/2 + 38, y + 16);
+
+    // ── VOTE RECORD section ────────────────────────────────────────────────
+    y += 30;
+    y = sectionTitle('VOTE RECORD', y);
+
+    const votedStr = certificate.votingDate.toLocaleString('en-IN', {
+      day: '2-digit', month: 'short', year: 'numeric',
+      hour: '2-digit', minute: '2-digit', second: '2-digit',
+      hour12: true, timeZone: 'Asia/Kolkata'
+    });
+
+    field('Voted On',       votedStr,                                15, 48, y);
+    field('Transaction ID', this.truncateHash(certificate.transactionId), 15, 48, y + 8,  true);
+    field('Blockchain Hash',this.truncateHash(certificate.blockchainHash), 15, 48, y + 16, true);
+    if (certificate.blockNumber) {
+      field('Block Number', `#${certificate.blockNumber}`,           W/2 + 5, W/2 + 38, y);
     }
-  }
+    if (certificate.blockHash) {
+      field('Block Hash',   this.truncateHash(certificate.blockHash), W/2 + 5, W/2 + 38, y + 8, true);
+    }
+    field('Network',        certificate.networkName || 'Ethereum',   W/2 + 5, W/2 + 38, y + 16);
+    field('Security Hash',  certificate.securityHash,                W/2 + 5, W/2 + 38, y + 24, true);
 
-  private downloadAsText(certificate: VotingCertificate): void {
-    const textContent = `
-VOTING CERTIFICATE
-==================
+    // ── VERIFICATION section ───────────────────────────────────────────────
+    y += 40;
+    y = sectionTitle('VERIFICATION', y);
 
-Voter ID (Encrypted): ${this.maskVoterId(certificate.voterId)}
-Voter Name: ${certificate.voterName}
-Email (Protected): ${this.maskEmail(certificate.voterEmail)}
-Voting Date: ${certificate.votingDate.toLocaleString()}
-Transaction ID: ${certificate.transactionId}
-Blockchain Hash (Encrypted): ${this.truncateHash(certificate.blockchainHash)}
-${certificate.blockNumber ? `Block Number: ${certificate.blockNumber}` : ''}
-${certificate.blockHash ? `Block Hash: ${certificate.blockHash}` : ''}
-${certificate.networkName ? `Network: ${certificate.networkName}` : ''}
-Constituency: ${certificate.constituency}
-Election Type: ${certificate.electionType}
-Security Hash: ${certificate.securityHash}
-${certificate.verificationUrl ? `\nVerify on Blockchain: ${certificate.verificationUrl}` : ''}
+    // QR code
+    try {
+      const qrDataUrl = await QRCode.toDataURL(certificate.verificationUrl || certificate.certNo, {
+        width: 128, margin: 1,
+        color: { dark: C.navy, light: C.cream }
+      });
+      pdf.addImage(qrDataUrl, 'PNG', 15, y, 28, 28);
+    } catch {
+      // If QR fails, draw placeholder box
+      pdf.setDrawColor(...hex(C.navy));
+      pdf.rect(15, y, 28, 28);
+      pdf.setFont('helvetica', 'normal');
+      pdf.setFontSize(6);
+      pdf.setTextColor(...hex(C.slate));
+      pdf.text('QR', 29, y + 15, { align: 'center' });
+    }
 
-This certificate serves as proof of your participation in the democratic process.
-Keep this certificate safe for your records.
+    // Verification text alongside QR
+    pdf.setFont('helvetica', 'bold');
+    pdf.setFontSize(7.5);
+    pdf.setTextColor(...hex(C.slate));
+    pdf.text('Scan QR or visit:', 48, y + 5);
 
-Generated by VoteLink - Secure Digital Voting Platform
-Powered by Blockchain Technology
-    `;
+    pdf.setFont('courier', 'normal');
+    pdf.setFontSize(7);
+    pdf.setTextColor(...hex(C.blue));
+    pdf.text(certificate.verificationUrl || `votelink.in/verify/${certificate.certNo}`, 48, y + 11, { maxWidth: W - 63 });
 
-    const blob = new Blob([textContent], { type: 'text/plain' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `Voting_Certificate_${certificate.transactionId}.txt`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-  }
+    // Verified badge
+    pdf.setFillColor(...hex(C.verified));
+    pdf.roundedRect(48, y + 16, 70, 7, 2, 2, 'F');
+    pdf.setFont('helvetica', 'bold');
+    pdf.setFontSize(8);
+    pdf.setTextColor(...hex(C.white));
+    pdf.text('✓  Vote Securely Recorded on Blockchain', 83, y + 21, { align: 'center' });
 
-  private generateCertificateHTML(certificate: VotingCertificate): string {
-    return `
-      <div style="font-family: 'Times New Roman', serif; max-width: 800px; margin: 0 auto; padding: 40px; border: 3px solid #FF6B35; background: linear-gradient(135deg, #FFF5F0 0%, #F0F8FF 100%);">
-        <div style="text-align: center; margin-bottom: 30px;">
-          <div style="display: inline-block; width: 80px; height: 80px; background: linear-gradient(135deg, #FF6B35, #4ECDC4); border-radius: 50%; margin-bottom: 20px; display: flex; align-items: center; justify-content: center;">
-            <span style="color: black; font-size: 36px; font-weight: bold;">V</span>
-          </div>
-          <h1 style="color: #FF6B35; margin: 0; font-size: 32px; font-weight: bold;">VOTING CERTIFICATE</h1>
-          <p style="color: #666; margin: 5px 0; font-size: 16px;">Official Proof of Democratic Participation</p>
-        </div>
+    // Warning note
+    pdf.setFont('helvetica', 'italic');
+    pdf.setFontSize(7);
+    pdf.setTextColor(...hex(C.slate));
+    pdf.text(
+      '⚠  This is a confidential document. Do NOT share it publicly.',
+      W / 2, y + 32, { align: 'center' }
+    );
 
-        <div style="background: black; padding: 30px; border-radius: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); margin-bottom: 30px;">
-          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 20px;">
-            <div>
-              <strong style="color: #FF6B35;">Voter ID (Encrypted):</strong><br>
-              <span style="font-family: monospace; background: #f5f5f5; padding: 5px; border-radius: 3px;">${this.maskVoterId(certificate.voterId)}</span>
-            </div>
-            <div>
-              <strong style="color: #FF6B35;">Voter Name:</strong><br>
-              <span>${certificate.voterName}</span>
-            </div>
-          </div>
+    // ── GREEN FOOTER ───────────────────────────────────────────────────────
+    pdf.setFillColor(...hex(C.green));
+    pdf.rect(6, H - 18, W - 12, 12, 'F');
 
-          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 20px;">
-            <div>
-              <strong style="color: #FF6B35;">Email (Protected):</strong><br>
-              <span>${this.maskEmail(certificate.voterEmail)}</span>
-            </div>
-            <div>
-              <strong style="color: #FF6B35;">Voting Date:</strong><br>
-              <span>${certificate.votingDate.toLocaleString()}</span>
-            </div>
-          </div>
+    pdf.setFont('helvetica', 'bold');
+    pdf.setFontSize(7.5);
+    pdf.setTextColor(...hex(C.white));
+    pdf.text('© 2026 VoteLink — Powered by Blockchain Technology', W / 2, H - 13, { align: 'center' });
 
-          <div style="margin-bottom: 20px;">
-            <strong style="color: #FF6B35;">Transaction ID:</strong><br>
-            <span style="font-family: monospace; background: #e8f5e8; padding: 8px; border-radius: 5px; display: inline-block; margin-top: 5px;">${certificate.transactionId}</span>
-          </div>
+    pdf.setFont('helvetica', 'normal');
+    pdf.setFontSize(6.5);
+    pdf.text(
+      `Generated: ${new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })} IST`,
+      W / 2, H - 9, { align: 'center' }
+    );
 
-          <div style="margin-bottom: 20px;">
-            <strong style="color: #FF6B35;">Blockchain Hash (Encrypted):</strong><br>
-            <span style="font-family: monospace; background: #e8f5e8; padding: 8px; border-radius: 5px; display: inline-block; margin-top: 5px; word-break: break-all; font-size: 12px;">${this.truncateHash(certificate.blockchainHash)}</span>
-          </div>
-
-          ${certificate.blockNumber ? `
-          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 20px;">
-            <div>
-              <strong style="color: #FF6B35;">Block Number:</strong><br>
-              <span style="font-family: monospace;">${certificate.blockNumber}</span>
-            </div>
-            <div>
-              <strong style="color: #FF6B35;">Network:</strong><br>
-              <span>${certificate.networkName || 'Sepolia Testnet'}</span>
-            </div>
-          </div>` : ''}
-          
-          ${certificate.verificationUrl ? `
-          <div style="margin-bottom: 20px; padding: 15px; background: #e3f2fd; border-radius: 8px; border-left: 4px solid #2196f3;">
-            <strong style="color: #1976d2;">🔗 Blockchain Verification:</strong><br>
-            <a href="${certificate.verificationUrl}" target="_blank" style="color: #1976d2; text-decoration: none; font-size: 12px; word-break: break-all;">${certificate.verificationUrl}</a>
-          </div>` : ''}
-
-          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
-            <div>
-              <strong style="color: #FF6B35;">Constituency:</strong><br>
-              <span>${certificate.constituency}</span>
-            </div>
-            <div>
-              <strong style="color: #FF6B35;">Election Type:</strong><br>
-              <span>${certificate.electionType}</span>
-            </div>
-          </div>
-        </div>
-
-        <div style="background: #f8f9fa; padding: 20px; border-radius: 8px; border-left: 4px solid #4ECDC4;">
-          <p style="margin: 0; color: #666; font-size: 14px; line-height: 1.6;">
-            <strong>Security Hash:</strong> <span style="font-family: monospace;">${certificate.securityHash}</span><br><br>
-            This certificate serves as official proof of your participation in the democratic process. 
-            It is secured by blockchain technology and cryptographic hashing to ensure authenticity and prevent tampering.
-          </p>
-        </div>
-
-        <div style="text-align: center; margin-top: 30px; padding-top: 20px; border-top: 2px solid #eee;">
-          <p style="color: #999; font-size: 12px; margin: 0;">
-            Generated by VoteLink - Secure Digital Voting Platform<br>
-            Powered by Blockchain Technology | ${new Date().toLocaleString()}
-          </p>
-        </div>
-      </div>
-    `;
+    // ── Save ───────────────────────────────────────────────────────────────
+    pdf.save(`VoteLink_Certificate_${certificate.certNo}.pdf`);
   }
 }
 

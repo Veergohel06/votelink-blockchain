@@ -214,7 +214,7 @@ interface EnhancedVotingInterfaceProps {
     logo?: string;
     description?: string;
   }>;
-  onVote: (partyId: string) => Promise<boolean>;
+  onVote: (partyId: string, candidateName: string, partyName: string) => Promise<boolean>;
   selectedParty?: string;
   disabled?: boolean;
   speechEnabled?: boolean;
@@ -324,7 +324,12 @@ export const EnhancedVotingInterface: React.FC<EnhancedVotingInterfaceProps> = (
     announceToScreenReader('Submitting your vote...');
     
     try {
-      const success = await onVote(currentParty);
+      const selectedPartyData = parties.find(p => p.id === currentParty);
+      const success = await onVote(
+        currentParty,
+        selectedPartyData?.name ?? currentParty,
+        selectedPartyData?.description ?? currentParty
+      );
       if (success) {
         announceToScreenReader('Your vote has been successfully submitted and recorded on the blockchain.');
       } else {

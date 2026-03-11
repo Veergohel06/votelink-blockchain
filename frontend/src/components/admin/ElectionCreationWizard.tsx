@@ -48,6 +48,8 @@ interface ElectionFormData {
   allowProxyVoting: boolean;
   maxCandidates: number;
   regions: string[];
+  state: string;
+  district: string;
   voterEligibility: {
     minAge: number;
     requiresCitizenship: boolean;
@@ -82,6 +84,8 @@ const ElectionCreationWizard: React.FC<ElectionWizardProps> = ({
     allowProxyVoting: false,
     maxCandidates: 10,
     regions: [],
+    state: '',
+    district: '',
     voterEligibility: {
       minAge: 18,
       requiresCitizenship: true,
@@ -386,6 +390,33 @@ const ElectionCreationWizard: React.FC<ElectionWizardProps> = ({
                       className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                       placeholder="Brief description of the election..."
                     />
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        State / Region *
+                      </label>
+                      <input
+                        type="text"
+                        value={formData.state}
+                        onChange={(e) => updateFormData({ state: e.target.value })}
+                        className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        placeholder="e.g., Maharashtra"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        District / City
+                      </label>
+                      <input
+                        type="text"
+                        value={formData.district}
+                        onChange={(e) => updateFormData({ district: e.target.value })}
+                        className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        placeholder="e.g., Mumbai"
+                      />
+                    </div>
                   </div>
 
                   <div>

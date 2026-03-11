@@ -1,5 +1,6 @@
 const mongoose = require('mongoose');
-
+const dns = require('dns');
+dns.setServers(['8.8.8.8', '8.8.4.4']); // Set Google DNS servers
 /**
  * MongoDB Connection Configuration
  * Reads connection URI from environment variable MONGO_URI
@@ -9,7 +10,9 @@ const connectDB = async () => {
   try {
     // Read MongoDB URI from environment variable
     const mongoURI = process.env.MONGO_URI;
-    
+
+
+
     if (!mongoURI) {
       console.error('❌ MONGO_URI environment variable is not defined');
       console.warn('⚠️  Please set MONGO_URI in your .env file');
@@ -26,31 +29,31 @@ const connectDB = async () => {
     };
 
     console.log('🔄 Connecting to MongoDB...');
-    
+
     await mongoose.connect(mongoURI, options);
-    
+
     console.log('✅ MongoDB connected successfully');
     console.log('📊 Database:', mongoose.connection.name);
     console.log('🌐 Host:', mongoose.connection.host);
     console.log('🔌 Port:', mongoose.connection.port);
-    
+
     return mongoose.connection;
-    
+
   } catch (error) {
     console.error('❌ MongoDB connection error:', error.message);
-    
+
     if (error.message.includes('ECONNREFUSED')) {
       console.error('💡 Make sure MongoDB server is running on the specified host and port');
     }
-    
+
     if (error.message.includes('authentication failed')) {
       console.error('💡 Check your MongoDB username and password');
     }
-    
+
     // Don't exit process, allow server to continue without DB (with warnings)
     console.warn('⚠️  Server will continue without database connection');
     console.warn('⚠️  Some features may not work properly');
-    
+
     return null;
   }
 };

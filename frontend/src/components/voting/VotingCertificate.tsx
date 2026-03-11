@@ -1,6 +1,6 @@
 ﻿import React, { useState } from "react";
 import { Download, FileText, Shield, CheckCircle, Loader2 } from "lucide-react";
-import { certificateService } from "../../services/certificateService";
+import { certificateService, VotingCertificate as CertificateData } from "../../services/certificateService";
 
 interface VotingCertificateProps {
   isVisible: boolean;
@@ -25,24 +25,22 @@ export const VotingCertificate: React.FC<VotingCertificateProps> = ({
   onClose,
 }) => {
   const [isDownloading, setIsDownloading] = useState(false);
-  const [certificate, setCertificate] = useState<any>(null);
+  const [certificate, setCertificate] = useState<CertificateData | null>(null);
 
-  // Function to mask email address - show first letter for identification
+  // Function to mask email address - show first 2 and last 2 of local part, full domain
   const maskEmail = (email: string): string => {
     if (!email || !email.includes('@')) return '***@***.***';
     const [localPart, domain] = email.split('@');
-    const domainParts = domain.split('.');
-    const maskedLocal = localPart.charAt(0) + '***';
-    const maskedDomain = domainParts.map((part, index) => 
-      index === domainParts.length - 1 ? part : '***'
-    ).join('.');
-    return `${maskedLocal}@${maskedDomain}`;
+    const maskedLocal = localPart.length <= 4
+      ? localPart.charAt(0) + '*'.repeat(localPart.length - 1)
+      : `${localPart.slice(0, 2)}${'*'.repeat(localPart.length - 4)}${localPart.slice(-2)}`;
+    return `${maskedLocal}@${domain}`;
   };
 
-  // Function to mask voter ID (show first 4 and last 4 characters)
+  // Function to mask voter ID (show first 2 and last 2 characters)
   const maskVoterId = (id: string): string => {
-    if (id.length <= 8) return id;
-    return `${id.slice(0, 4)}${'*'.repeat(id.length - 8)}${id.slice(-4)}`;
+    if (id.length <= 4) return id;
+    return `${id.slice(0, 2)}${'*'.repeat(id.length - 4)}${id.slice(-2)}`;
   };
 
   // Function to truncate transaction hash

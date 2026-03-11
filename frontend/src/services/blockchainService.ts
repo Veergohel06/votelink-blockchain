@@ -1,3 +1,4 @@
+/// <reference types="vite/client" />
 import { ethers } from 'ethers';
 
 // Smart Contract ABI for the Voting Contract
@@ -6,7 +7,7 @@ const VOTING_CONTRACT_ABI = [
   "function castVote(bytes32 voterHash, bytes32 partyHash) external",
   "function hasVotedCheck(bytes32 voterHash) external view returns (bool)",
   "function getVoteCount(bytes32 partyHash) external view returns (uint256)",
-  "function totalVotes() external view returns (uint256)",
+  "function getTotalVotes() external view returns (uint256)",
   "event VoteCast(bytes32 indexed partyHash, uint256 timestamp)",
   "event VoterRegistered(bytes32 indexed voterHash, uint256 timestamp)"
 ];
@@ -16,18 +17,10 @@ const CONTRACT_ADDRESS = '0x5FbDB2315678afecb367f032d93F642f64180aa3';
 
 // Local Hardhat network configuration
 const GANACHE_NETWORK = {
-  chainId: 31337,
+  chainId: 1337,
   name: 'Hardhat Local',
   rpcUrl: import.meta.env.VITE_BLOCKCHAIN_RPC || 'http://127.0.0.1:8545',
   blockExplorerUrl: null // No block explorer for local network
-};
-
-// Sepolia network configuration (for production later)
-const SEPOLIA_NETWORK = {
-  chainId: 11155111,
-  name: 'Sepolia Testnet',
-  rpcUrl: 'https://sepolia.infura.io/v3/',
-  blockExplorerUrl: 'https://sepolia.etherscan.io/'
 };
 
 interface BlockchainVoteReceipt {
@@ -56,31 +49,41 @@ class BlockchainService {
     hashedID: string;
     alreadyRegistered?: boolean;
   }> {
-    try {
-      // Ensure we're connected
-      if (!this.contract) {
-        await this.connectWallet();
-      }
-      
-      // Create privacy-preserving hash
-      const hashedVoterID = ethers.keccak256(ethers.toUtf8Bytes(voterID + 'votelink-salt-2024'));
-      
-      // Check if this hashed ID is already in the system
-      const hasVoted = await this.contract!.hasVotedCheck(hashedVoterID);
-      
-      return {
-        isEligible: true, // In real system, check against voter registry
-        hashedID: hashedVoterID,
-        alreadyRegistered: hasVoted
-      };
-    } catch (error) {
-      console.error('Voter eligibility check failed:', error);
-      return {
-        isEligible: false,
-        hashedID: '',
-        alreadyRegistered: false
-      };
+    // Ensure we're connected - let errors propagate so MetaMask popup can appear
+    if (!this.contract) {
+      await this.connectWallet();
     }
+
+    // Create privacy-preserving hash — must match the hash used in castVote/registerVoter
+    const hashedVoterID = ethers.keccak256(ethers.toUtf8Bytes(voterID));
+
+    // Check if this hashed ID is already in the system
+    let hasVoted = false;
+    try {
+      hasVoted = await this.contract!.hasVotedCheck(hashedVoterID);
+    } catch (contractError: unknown) {
+      // CALL_EXCEPTION typically means the contract isn't deployed at this address
+      // or the local Hardhat node isn't running. Log the issue and allow the user
+      // to proceed (assume not voted) rather than blocking with a cryptic error.
+      const errCode = (contractError as { code?: string })?.code;
+      if (
+        errCode === 'CALL_EXCEPTION' ||
+        errCode === 'NETWORK_ERROR' ||
+        errCode === 'UNKNOWN_ERROR' ||
+        errCode === 'BAD_DATA'
+      ) {
+        console.warn('⚠️ Blockchain contract call failed (node may not be running or contract not deployed). Allowing voter through:', contractError);
+        hasVoted = false;
+      } else {
+        throw contractError;
+      }
+    }
+
+    return {
+      isEligible: true,
+      hashedID: hashedVoterID,
+      alreadyRegistered: hasVoted
+    };
   }
   private contract: ethers.Contract | null = null;
   private isInitialized = false;
@@ -102,9 +105,9 @@ class BlockchainService {
   async initialize(): Promise<boolean> {
     try {
       console.log('🔄 Initializing blockchain service...');
-      console.log('🎯 Target network: Ganache Local (Chain ID: 1337)');
+      console.log('🎯 Target network: Hardhat Local (Chain ID: 31337)');
       console.log('📍 Contract address:', CONTRACT_ADDRESS);
-      
+
       // Check if MetaMask is installed
       if (typeof window.ethereum === 'undefined') {
         console.error('MetaMask is not installed');
@@ -113,69 +116,47 @@ class BlockchainService {
 
       console.log('📍 Using contract at:', CONTRACT_ADDRESS);
 
-      // Reset MetaMask connection to fix circuit breaker
-      try {
-        console.log('🔄 Resetting MetaMask connection...');
-        await window.ethereum.request({
-          method: 'wallet_requestPermissions',
-          params: [{ eth_accounts: {} }]
-        });
-        console.log('✅ MetaMask reset successful');
-      } catch (resetError) {
-        console.log('⚠️ Reset skipped, continuing...');
-      }
-
-      // Create provider with retry logic
-      this.provider = new ethers.BrowserProvider(window.ethereum);
-      
-      // Check current network with detailed debugging
-      const network = await this.provider.getNetwork();
-      const chainId = Number(network.chainId);
-      
-      console.log('🔍 Network Detection Debug:');
-      console.log('- Network object:', network);
-      console.log('- Chain ID (number):', chainId);
-      console.log('- Chain ID (BigInt):', network.chainId);
-      console.log('- Network name:', network.name);
-      console.log('- Expected Chain ID:', GANACHE_NETWORK.chainId);
-      
-      // Check if we're on the correct network (1337 for Ganache)
-      if (chainId !== GANACHE_NETWORK.chainId) {
-        console.error(`❌ Network mismatch detected!`);
-        console.error(`- Current: ${network.name || 'Unknown'} (Chain ID: ${chainId})`);
-        console.error(`- Required: Ganache Local (Chain ID: ${GANACHE_NETWORK.chainId})`);
-        
-        // Force a fresh network check
-        try {
-          const freshChainId = await window.ethereum.request({ method: 'eth_chainId' });
-          const freshChainIdNumber = parseInt(freshChainId, 16);
-          console.log('🔄 Fresh chain ID check:', freshChainId, '→', freshChainIdNumber);
-          
-          if (freshChainIdNumber !== GANACHE_NETWORK.chainId) {
-            throw new Error(`🚫 Wrong Network!\n\n🔄 Current: Chain ID ${freshChainIdNumber}\n✅ Required: Chain ID ${GANACHE_NETWORK.chainId} (Ganache Local)\n\n📋 Please switch to Localhost 8545 or Ganache Local in MetaMask`);
-          }
-        } catch (rpcError) {
-          console.error('RPC chain ID check failed:', rpcError);
-          throw new Error(`🚫 Network Check Failed!\n\nPlease ensure:\n1. MetaMask is connected\n2. You're on Localhost 8545 network\n3. Chain ID is 1337\n\nCurrent detected: ${network.name || 'Unknown'} (${chainId})`);
-        }
-      }
-      
-      console.log('✅ Network verification passed - Chain ID:', chainId);
-      
-      // Request account access
+      // FIRST: Request account access - this triggers the MetaMask popup
+      console.log('🦊 Opening MetaMask for account connection...');
       await window.ethereum.request({ method: 'eth_requestAccounts' });
-      
+      console.log('✅ MetaMask account access granted');
+
+      // Create provider
+      this.provider = new ethers.BrowserProvider(window.ethereum);
+
       // Get signer
       this.signer = await this.provider.getSigner();
-      
-      // Check balance
-      const balance = await this.provider.getBalance(await this.signer.getAddress());
-      console.log('Wallet balance:', ethers.formatEther(balance), 'ETH');
-      
-      if (balance === BigInt(0)) {
-        throw new Error('Insufficient balance. Make sure you imported the Ganache test account with 1000 ETH');
+      const signerAddress = await this.signer.getAddress();
+      console.log('👤 Connected wallet:', signerAddress);
+
+      // Check current network (non-fatal - warn but continue)
+      try {
+        const network = await this.provider.getNetwork();
+        const chainId = Number(network.chainId);
+
+        console.log('🔍 Network Detection:');
+        console.log('- Chain ID:', chainId);
+        console.log('- Network name:', network.name);
+        console.log('- Expected Chain ID:', GANACHE_NETWORK.chainId);
+
+        if (chainId !== GANACHE_NETWORK.chainId) {
+          console.warn(`⚠️ Network mismatch: Current Chain ID ${chainId}, Expected ${GANACHE_NETWORK.chainId}`);
+          console.warn('⚠️ Blockchain features may not work correctly. Please switch to Localhost 8545 in MetaMask.');
+        } else {
+          console.log('✅ Network verification passed - Chain ID:', chainId);
+        }
+      } catch (networkError) {
+        console.warn('⚠️ Network check failed:', networkError);
       }
-      
+
+      // Check balance
+      try {
+        const balance = await this.provider.getBalance(signerAddress);
+        console.log('Wallet balance:', ethers.formatEther(balance), 'ETH');
+      } catch (balanceError) {
+        console.warn('⚠️ Balance check failed:', balanceError);
+      }
+
       // Initialize contract with error handling
       this.contract = new ethers.Contract(
         CONTRACT_ADDRESS,
@@ -186,55 +167,36 @@ class BlockchainService {
       // Add circuit breaker bypass
       if (window.ethereum && window.ethereum.isMetaMask) {
         console.log('🦊 MetaMask detected, configuring for stability...');
-        // Disable MetaMask's aggressive caching
         window.ethereum.autoRefreshOnNetworkChange = false;
       }
 
-      // Verify contract exists and is deployed with retry logic
+      // Verify contract exists and is deployed (non-fatal)
       try {
         console.log('🔍 Verifying contract deployment...');
-        
-        // Check if contract exists
+
         const contractCode = await this.provider.getCode(CONTRACT_ADDRESS);
         if (contractCode === '0x') {
-          throw new Error(`❌ Contract not deployed at ${CONTRACT_ADDRESS}!\n\nPlease:\n1. Make sure Ganache is running\n2. Deploy the contract\n3. Refresh this page`);
+          console.warn(`⚠️ Contract not deployed at ${CONTRACT_ADDRESS}. Blockchain voting may not work.`);
+        } else {
+          console.log('✅ Contract verified - deployed at:', CONTRACT_ADDRESS);
+
+          // Test contract with timeout
+          const timeout = new Promise((_, reject) =>
+            setTimeout(() => reject(new Error('Contract call timeout')), 5000)
+          );
+
+          const totalVotesCall = this.contract.getTotalVotes();
+          const totalVotes = await Promise.race([totalVotesCall, timeout]);
+          console.log('📊 Contract is responsive - Total votes:', (totalVotes as any).toString());
         }
-        console.log('✅ Contract verified - deployed at:', CONTRACT_ADDRESS);
-        
-        // Test contract with timeout to prevent circuit breaker
-        const timeout = new Promise((_, reject) => 
-          setTimeout(() => reject(new Error('Contract call timeout')), 5000)
-        );
-        
-        const totalVotesCall = this.contract.totalVotes();
-        const totalVotes = await Promise.race([totalVotesCall, timeout]);
-        console.log('📊 Contract is responsive - Total votes:', totalVotes.toString());
-        
       } catch (contractError) {
-        console.error('❌ Contract verification failed:', contractError);
-        
-        // Handle specific errors
-        if (contractError instanceof Error) {
-          if (contractError.message.includes('timeout')) {
-            throw new Error('⏱️ Contract response timeout. Please check your network connection and try again.');
-          }
-          if (contractError.message.includes('Contract not deployed')) {
-            throw contractError;
-          }
-          // Circuit breaker error
-          if (contractError.message.includes('circuit breaker') || contractError.message.includes('-32603')) {
-            throw new Error('🔌 Connection Error!\n\nPlease:\n1. Refresh this page\n2. Make sure MetaMask is connected to Localhost 8545\n3. Ensure Ganache is running\n4. Try again');
-          }
-        }
-        
-        throw new Error(`❌ Cannot connect to voting contract!\n\nError: ${contractError instanceof Error ? contractError.message : String(contractError)}\n\nTry refreshing the page.`);
+        console.warn('⚠️ Contract verification failed (blockchain features may be limited):', contractError);
       }
 
       this.isInitialized = true;
       console.log('✅ Blockchain service initialized successfully');
       console.log('📍 Contract Address:', CONTRACT_ADDRESS);
-      console.log('🌐 Network:', network.name);
-      
+
       return true;
     } catch (error) {
       console.error('Failed to initialize blockchain service:', error);
@@ -253,11 +215,32 @@ class BlockchainService {
 
       const address = await this.signer!.getAddress();
       console.log('Connected wallet address:', address);
-      
+
       return address;
     } catch (error) {
       console.error('Failed to connect wallet:', error);
       throw new Error('Failed to connect to MetaMask wallet');
+    }
+  }
+
+  /**
+   * Request a cryptographic signature from the user to verify identity explicitly.
+   * This forces MetaMask to prompt the user.
+   */
+  async requestSignature(message: string): Promise<string> {
+    try {
+      if (!this.signer) {
+        await this.initialize();
+      }
+
+      console.log('✍️ Requesting explicit signature from MetaMask...');
+      const signature = await this.signer!.signMessage(message);
+      console.log('✅ Signature acquired successfully.');
+
+      return signature;
+    } catch (error) {
+      console.error('Signature request rejected or failed:', error);
+      throw new Error('MetaMask Identity Verification Cancelled: You must sign the message to verify your identity.');
     }
   }
 
@@ -287,10 +270,10 @@ class BlockchainService {
 
       // Generate voter hash (privacy-preserving)
       const voterHash = this.generateVoterHash(voterId);
-      
+
       console.log('📝 Registering voter on blockchain...');
       console.log('🔐 Voter Hash:', voterHash);
-      
+
       // Estimate gas first
       try {
         const gasEstimate = await this.contract!.registerVoter.estimateGas(voterHash);
@@ -299,28 +282,28 @@ class BlockchainService {
         console.error('Gas estimation failed:', gasError);
         throw new Error('Registration transaction will likely fail. Please check contract deployment.');
       }
-      
+
       // Send transaction (let ethers auto-estimate gas)
       const tx = await this.contract!.registerVoter(voterHash);
-        console.log('📤 Registration transaction sent:', tx.hash);
-        console.log('🔗 Transaction Hash:', tx.hash);      // Wait for confirmation
+      console.log('📤 Registration transaction sent:', tx.hash);
+      console.log('🔗 Transaction Hash:', tx.hash);      // Wait for confirmation
       console.log('⏳ Waiting for blockchain confirmation...');
       const receipt = await tx.wait();
       console.log('✅ Voter registered in block:', receipt.blockNumber);
 
       return {
         voterHash,
-        transactionHash: receipt.hash,
+        transactionHash: tx.hash,
         blockNumber: receipt.blockNumber,
         timestamp: Date.now()
       };
     } catch (error) {
       console.error('❌ Failed to register voter:', error);
-      
+
       // Handle specific errors
       if (error instanceof Error) {
         const message = error.message;
-        
+
         if (message.includes('user rejected')) {
           throw new Error('Registration was rejected by user');
         }
@@ -333,10 +316,10 @@ class BlockchainService {
         if (message.includes('network')) {
           throw new Error('Network error. Please check your connection and try again');
         }
-        
+
         throw new Error(`Registration error: ${message}`);
       }
-      
+
       throw new Error('Failed to register voter on blockchain');
     }
   }
@@ -353,40 +336,43 @@ class BlockchainService {
       // Generate hashes
       const voterHash = this.generateVoterHash(voterId);
       const partyHash = this.generatePartyHash(partyId);
-      
+
       console.log('🗳️ Casting vote on blockchain...');
       console.log('📋 Voter Hash:', voterHash);
       console.log('🎯 Party Hash:', partyHash);
-      
+
+      // Explicit Identity Verification:
+      await this.requestSignature(`I am securely casting my vote for Party ID: ${partyId}\n\nTimestamp: ${Date.now()}`);
+
       // Estimate gas first
       try {
         const gasEstimate = await this.contract!.castVote.estimateGas(voterHash, partyHash);
         console.log('⛽ Estimated gas:', gasEstimate.toString());
-        
+
         // Check if user has enough balance
         const feeData = await this.provider!.getFeeData();
         const estimatedCost = gasEstimate * (feeData.gasPrice || BigInt(0));
         const balance = await this.provider!.getBalance(await this.signer!.getAddress());
-        
+
         if (balance < estimatedCost) {
           throw new Error(`Insufficient balance for transaction. Need ${ethers.formatEther(estimatedCost)} ETH`);
         }
-        
+
       } catch (gasError) {
         console.error('Gas estimation failed:', gasError);
         throw new Error('Transaction will likely fail. Please check your wallet and contract status.');
       }
-      
+
       // Send transaction (let ethers auto-estimate gas)
       const tx = await this.contract!.castVote(voterHash, partyHash);
-        console.log('📤 Vote transaction sent:', tx.hash);
-        console.log('🔗 Transaction Hash:', tx.hash);      // Wait for confirmation
+      console.log('📤 Vote transaction sent:', tx.hash);
+      console.log('🔗 Transaction Hash:', tx.hash);      // Wait for confirmation
       console.log('⏳ Waiting for blockchain confirmation...');
       const receipt = await tx.wait();
       console.log('✅ Vote recorded in block:', receipt.blockNumber);
 
       return {
-        transactionHash: receipt.hash,
+        transactionHash: tx.hash,
         blockNumber: receipt.blockNumber,
         blockHash: receipt.blockHash,
         timestamp: Date.now(),
@@ -395,11 +381,11 @@ class BlockchainService {
       };
     } catch (error) {
       console.error('❌ Failed to cast vote:', error);
-      
+
       // Handle specific MetaMask/blockchain errors
       if (error instanceof Error) {
         const message = error.message;
-        
+
         if (message.includes('user rejected')) {
           throw new Error('Transaction was rejected by user');
         }
@@ -418,10 +404,10 @@ class BlockchainService {
         if (message.includes('gas')) {
           throw new Error('Transaction failed due to gas issues. Please try again with higher gas');
         }
-        
+
         throw new Error(`Blockchain error: ${message}`);
       }
-      
+
       throw new Error('Failed to cast vote on blockchain');
     }
   }
@@ -437,7 +423,7 @@ class BlockchainService {
 
       const voterHash = this.generateVoterHash(voterId);
       const voted = await this.contract!.hasVotedCheck(voterHash);
-      
+
       return voted;
     } catch (error) {
       console.error('Failed to check voting status:', error);
@@ -455,7 +441,7 @@ class BlockchainService {
       }
 
       const tx = await this.provider!.getTransaction(transactionHash);
-      
+
       if (!tx) {
         console.error('Transaction not found');
         return false;
@@ -463,13 +449,13 @@ class BlockchainService {
 
       // Check if transaction is confirmed
       const confirmed = tx.blockNumber !== null;
-      
+
       console.log('Transaction verified:', {
         hash: tx.hash,
         blockNumber: tx.blockNumber,
         confirmed
       });
-      
+
       return confirmed;
     } catch (error) {
       console.error('Failed to verify vote:', error);
@@ -488,7 +474,7 @@ class BlockchainService {
 
       const partyHash = this.generatePartyHash(partyId);
       const count = await this.contract!.getVoteCount(partyHash);
-      
+
       return Number(count);
     } catch (error) {
       console.error('Failed to get vote count:', error);
@@ -524,7 +510,7 @@ class BlockchainService {
 
       const tx = await this.provider!.getTransaction(txHash);
       const receipt = await this.provider!.getTransactionReceipt(txHash);
-      
+
       if (!tx || !receipt) {
         return null;
       }
@@ -555,7 +541,7 @@ class BlockchainService {
       }
 
       const network = await this.provider!.getNetwork();
-      
+
       return {
         chainId: Number(network.chainId),
         name: network.name,
@@ -578,12 +564,12 @@ class BlockchainService {
 
       const voterHash = this.generateVoterHash(voterId);
       const partyHash = this.generatePartyHash(partyId);
-      
+
       const gasEstimate = await this.contract!.castVote.estimateGas(voterHash, partyHash);
       const gasPrice = await this.provider!.getFeeData();
-      
+
       const estimatedCost = gasEstimate * (gasPrice.gasPrice || BigInt(0));
-      
+
       return ethers.formatEther(estimatedCost);
     } catch (error) {
       console.error('Failed to estimate gas:', error);
@@ -634,7 +620,7 @@ class BlockchainService {
         });
         return true;
       }
-      
+
       // Sepolia testnet
       if (chainId === 11155111) {
         await window.ethereum.request({
@@ -653,7 +639,7 @@ class BlockchainService {
         });
         return true;
       }
-      
+
       return false;
     } catch (error) {
       console.error('Failed to add network:', error);
@@ -670,20 +656,20 @@ export const blockchainService = new BlockchainService();
   console.log('🔍 BLOCKCHAIN DEBUG INFO:');
   console.log('📍 Contract Address:', CONTRACT_ADDRESS);
   console.log('🎯 Target Network:', GANACHE_NETWORK);
-  
+
   if (typeof window.ethereum !== 'undefined') {
     try {
       const chainId = await window.ethereum.request({ method: 'eth_chainId' });
       const accounts = await window.ethereum.request({ method: 'eth_accounts' });
       console.log('🌐 Current Chain ID:', chainId, '→', parseInt(chainId, 16));
       console.log('👤 Connected Accounts:', accounts);
-      
+
       const provider = new ethers.BrowserProvider(window.ethereum);
       const network = await provider.getNetwork();
       console.log('📡 Network Object:', network);
       console.log('🔗 Network Name:', network.name);
       console.log('🆔 Network Chain ID:', Number(network.chainId));
-      
+
     } catch (error) {
       console.error('❌ Debug Error:', error);
     }

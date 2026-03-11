@@ -417,16 +417,20 @@ Frontend:
 
 Backend:
 ├─ .env
-│  ├─ SUPABASE_URL
-│  ├─ SUPABASE_ANON_KEY
-│  ├─ SUPABASE_SERVICE_KEY
+│  ├─ SUPABASE_URL (removed — not used)
+│  ├─ EMAIL_USER (Gmail SMTP)
+│  ├─ EMAIL_PASS (Gmail App Password)
+│  ├─ ADMIN_PASSWORD (admin login)
+│  ├─ ADMIN_SECRET_TOKEN (admin API auth)
 │  └─ FRONTEND_URL
 │
-├─ config/supabase.js
-│  └─ Initializes Supabase clients
+├─ config/supabase.js (removed — not used)
 │
-└─ services/emailOTPService.js
-   └─ OTP logic & Supabase integration
+└─ services/emailService.js
+   └─ OTP logic via Gmail SMTP (nodemailer)
+
+Note: Supabase was removed. Email OTP is now handled entirely by
+emailService.js using Gmail SMTP via nodemailer.
 
 Supabase:
 ├─ Authentication

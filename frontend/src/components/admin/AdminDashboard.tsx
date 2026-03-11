@@ -26,7 +26,8 @@ import {
   X,
   Layout,
   PieChart,
-  Trophy
+  Trophy,
+  Trash2
 } from 'lucide-react';
 import ElectionCreationWizard from './ElectionCreationWizard';
 import { SecurityDashboard } from './SecurityDashboard';
@@ -223,6 +224,38 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
     setShowElectionDetails(true);
   };
 
+  const handleDeleteElection = async (electionId: string) => {
+    const election = elections.find(e => e.id === electionId);
+    if (!election) return;
+
+    const confirmed = window.confirm(
+      `⚠️ Are you sure you want to delete "${election.title}"?\n\nThis action cannot be undone.`
+    );
+    if (!confirmed) return;
+
+    try {
+      // Delete from backend
+      const apiUrl = import.meta.env.VITE_AUTH_API_URL || 'http://localhost:5000/api';
+      const response = await fetch(`${apiUrl}/elections/${electionId}`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' }
+      });
+
+      if (response.ok) {
+        console.log(`🗑️ Election deleted from backend: ${election.title}`);
+      } else {
+        console.warn('⚠️ Backend delete failed, removing locally');
+      }
+    } catch (err) {
+      console.warn('⚠️ Backend delete request failed, removing locally:', err);
+    }
+
+    // Always remove locally as well
+    electionService.forceDeleteElection(electionId);
+    setShowElectionDetails(false);
+    alert(`✅ Election "${election.title}" has been deleted.`);
+  };
+
   const handleElectionAction = (electionId: string, action: string) => {
     const election = elections.find(e => e.id === electionId);
     if (!election) return;
@@ -400,6 +433,16 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
                       title="Manage Settings"
                     >
                       <Settings className="w-4 h-4" />
+                    </button>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleDeleteElection(election.id);
+                      }}
+                      className="p-2 bg-red-500/20 hover:bg-red-500/30 text-red-600 rounded-lg transition-colors duration-200"
+                      title="Delete Election"
+                    >
+                      <Trash2 className="w-4 h-4" />
                     </button>
                   </div>
                 </div>
@@ -1138,7 +1181,8 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
             party: c.party,
             symbol: c.symbol || '',
             color: c.color || '#3B82F6',
-            description: c.description || ''
+            description: c.description || '',
+            image: c.image || ''
           }));
 
           // Add NOTA option automatically if not already present
@@ -1177,8 +1221,9 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
             endDate: electionData.endDate,
             registrationDeadline: electionData.registrationDeadline,
             region: {
-              name: electionData.regions[0] || 'Custom Region',
-              state: electionData.regions[0] || 'All States',
+              name: electionData.district || electionData.state || electionData.regions[0] || 'Custom Region',
+              state: electionData.state || electionData.regions[0] || 'All States',
+              district: electionData.district || undefined,
               constituencies: electionData.regions || ['Default Constituency']
             },
             totalVoters: 50000,
@@ -1381,6 +1426,12 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
                       className="w-full py-3 bg-gradient-to-r from-orange-500/80 to-red-500/80 backdrop-blur-sm text-white rounded-xl font-medium hover:from-orange-600/80 hover:to-red-600/80 transition-all duration-300 border border-white/20"
                     >
                       ⚙️ Manage Settings
+                    </button>
+                    <button
+                      onClick={() => handleDeleteElection(selectedElection.id)}
+                      className="w-full py-3 bg-gradient-to-r from-red-600/80 to-red-800/80 backdrop-blur-sm text-white rounded-xl font-medium hover:from-red-700/80 hover:to-red-900/80 transition-all duration-300 border border-white/20"
+                    >
+                      🗑️ Delete Election
                     </button>
                   </div>
                 </div>

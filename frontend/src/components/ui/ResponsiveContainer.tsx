@@ -99,7 +99,7 @@ interface MobileOptimizedVotingProps {
     logo?: string;
     description?: string;
   }>;
-  onVote: (partyId: string) => Promise<boolean>;
+  onVote: (partyId: string, candidateName: string, partyName: string) => Promise<boolean>;
   disabled?: boolean;
 }
 
@@ -145,7 +145,12 @@ export const MobileOptimizedVoting: React.FC<MobileOptimizedVotingProps> = ({
 
     setIsVoting(true);
     try {
-      await onVote(selectedParty);
+      const selectedPartyData = parties.find(p => p.id === selectedParty);
+      await onVote(
+        selectedParty,
+        selectedPartyData?.name ?? selectedParty,
+        selectedPartyData?.description ?? selectedParty
+      );
     } catch (error) {
       console.error('Vote failed:', error);
     } finally {

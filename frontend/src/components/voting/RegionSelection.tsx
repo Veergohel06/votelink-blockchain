@@ -1,13 +1,13 @@
 import React, { useState, useEffect } from 'react';
-import { 
-  MapPin, 
-  Search, 
-  Calendar, 
-  Users, 
-  Vote, 
-  AlertCircle, 
-  CheckCircle, 
-  ArrowLeft, 
+import {
+  MapPin,
+  Search,
+  Calendar,
+  Users,
+  Vote,
+  AlertCircle,
+  CheckCircle,
+  ArrowLeft,
   ArrowRight,
   Shield,
   Eye,
@@ -57,8 +57,8 @@ export const RegionSelection: React.FC<RegionSelectionProps> = ({
 
   // Helper function to check if user has voted in a specific election
   const hasVotedInElection = (electionId: string): boolean => {
-    return votedElections.some(v => 
-      v.electionId === electionId || 
+    return votedElections.some(v =>
+      v.electionId === electionId ||
       v.electionId === `election_${electionId}` ||
       electionId === `election_${v.electionId}` ||
       v.electionId === electionId.replace('election_', '')
@@ -67,8 +67,8 @@ export const RegionSelection: React.FC<RegionSelectionProps> = ({
 
   // Helper function to get voted date for an election
   const getVotedDate = (electionId: string): string | null => {
-    const vote = votedElections.find(v => 
-      v.electionId === electionId || 
+    const vote = votedElections.find(v =>
+      v.electionId === electionId ||
       v.electionId === `election_${electionId}` ||
       electionId === `election_${v.electionId}`
     );
@@ -100,7 +100,7 @@ export const RegionSelection: React.FC<RegionSelectionProps> = ({
   useEffect(() => {
     const performRealTimeAuth = async () => {
       setAuthInProgress(true);
-      
+
       try {
         // Real WebAuthn Biometric Authentication
         const checkBiometric = async () => {
@@ -110,9 +110,9 @@ export const RegionSelection: React.FC<RegionSelectionProps> = ({
             }
 
             // Check if WebAuthn is supported
-            const isWebAuthnSupported = window.PublicKeyCredential && 
+            const isWebAuthnSupported = window.PublicKeyCredential &&
               await PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable();
-            
+
             if (!isWebAuthnSupported) {
               return false;
             }
@@ -130,7 +130,7 @@ export const RegionSelection: React.FC<RegionSelectionProps> = ({
                   name: userEmail,
                   displayName: "Voter"
                 },
-                pubKeyCredParams: [{alg: -7, type: "public-key"}],
+                pubKeyCredParams: [{ alg: -7, type: "public-key" }],
                 authenticatorSelection: {
                   authenticatorAttachment: "platform",
                   userVerification: "required"
@@ -180,7 +180,7 @@ export const RegionSelection: React.FC<RegionSelectionProps> = ({
 
             // Additional security headers check
             const hasSecurityHeaders = document.querySelector('meta[http-equiv="Content-Security-Policy"]') !== null ||
-                                     document.querySelector('meta[http-equiv="Strict-Transport-Security"]') !== null;
+              document.querySelector('meta[http-equiv="Strict-Transport-Security"]') !== null;
 
             return securityState && (response?.ok !== false);
           } catch (error) {
@@ -228,11 +228,11 @@ export const RegionSelection: React.FC<RegionSelectionProps> = ({
                   const oscillator = audioContext.createOscillator();
                   const analyser = audioContext.createAnalyser();
                   const gainNode = audioContext.createGain();
-                  
+
                   oscillator.connect(analyser);
                   analyser.connect(gainNode);
                   gainNode.connect(audioContext.destination);
-                  
+
                   oscillator.start();
                   setTimeout(() => {
                     oscillator.stop();
@@ -261,10 +261,10 @@ export const RegionSelection: React.FC<RegionSelectionProps> = ({
 
             // Verify device matches
             const isKnownDevice = storedDeviceId === deviceId;
-            
+
             // Check if device was recently verified (within 24 hours)
             const lastVerified = localStorage.getItem('votelink_device_verified');
-            const isRecentlyVerified = lastVerified && 
+            const isRecentlyVerified = lastVerified &&
               (Date.now() - new Date(lastVerified).getTime()) < 24 * 60 * 60 * 1000;
 
             if (isKnownDevice && isRecentlyVerified) {
@@ -301,15 +301,15 @@ export const RegionSelection: React.FC<RegionSelectionProps> = ({
         };
 
         const checkConnection = () => {
-          return navigator.onLine && 
-                 window.location.protocol === 'https:' &&
-                 !window.location.hostname.includes('unsafe');
+          return navigator.onLine &&
+            window.location.protocol === 'https:' &&
+            !window.location.hostname.includes('unsafe');
         };
 
         const checkSession = () => {
           const sessionToken = localStorage.getItem('votelink_session');
           const sessionExpiry = localStorage.getItem('votelink_session_expiry');
-          
+
           if (!sessionToken || !sessionExpiry) {
             return false;
           }
@@ -320,7 +320,7 @@ export const RegionSelection: React.FC<RegionSelectionProps> = ({
         // Perform all security checks
         const [biometric, tls, device, camera, connection, session] = await Promise.all([
           checkBiometric(),
-          checkTLSCertificate(), 
+          checkTLSCertificate(),
           checkDeviceFingerprint(),
           checkCamera(),
           Promise.resolve(checkConnection()),
@@ -372,7 +372,7 @@ export const RegionSelection: React.FC<RegionSelectionProps> = ({
           const validateSession = () => {
             const sessionToken = localStorage.getItem('votelink_session');
             const sessionExpiry = localStorage.getItem('votelink_session_expiry');
-            
+
             if (!sessionToken) {
               // Create new session
               const newToken = crypto.getRandomValues(new Uint32Array(4)).join('');
@@ -483,7 +483,8 @@ export const RegionSelection: React.FC<RegionSelectionProps> = ({
         name: c.name,
         party: c.party,
         symbol: c.symbol || '🗳️',
-        partyColor: (c as { partyColor?: string }).partyColor || '#FF9933'
+        partyColor: (c as { partyColor?: string }).partyColor || '#FF9933',
+        image: c.image || ''
       }))
     };
   };
@@ -496,21 +497,21 @@ export const RegionSelection: React.FC<RegionSelectionProps> = ({
       const liveAdminElections = adminElections.filter(
         e => e.status === 'active' || (e.status === 'scheduled' && new Date(e.startDate) <= new Date())
       );
-      
+
       // If there are no admin elections, show empty state
       if (liveAdminElections.length === 0) {
         setAvailableRegions([]);
         setFilteredRegions([]);
         return;
       }
-      
+
       // Create regions dynamically from admin elections
       // Extract unique states and districts from admin elections
       const regionsMap = new Map<string, VotingRegion>();
-      
+
       liveAdminElections.forEach(election => {
         const electionRegion = election.region;
-        
+
         // For each election, create or update regions
         if (election.type === 'national') {
           // National elections - create regions for all states if not exist
@@ -527,7 +528,7 @@ export const RegionSelection: React.FC<RegionSelectionProps> = ({
               activeElections: []
             }
           ];
-          
+
           nationwideConstituencies.forEach(region => {
             const key = region.id;
             if (!regionsMap.has(key)) {
@@ -543,20 +544,20 @@ export const RegionSelection: React.FC<RegionSelectionProps> = ({
         } else {
           // State/District/Local elections
           const regionKey = `${electionRegion.state}-${electionRegion.district || 'general'}`;
-          
+
           if (!regionsMap.has(regionKey)) {
             regionsMap.set(regionKey, {
               id: regionKey,
               name: electionRegion.name,
               state: electionRegion.state,
-              district: electionRegion.district || electionRegion.state,
+              district: electionRegion.district || (electionRegion.state !== 'All States' ? electionRegion.state : 'N/A'),
               constituency: electionRegion.constituencies?.[0] || electionRegion.name,
               type: election.type as any,
               totalVoters: election.totalVoters,
               activeElections: []
             });
           }
-          
+
           // Add election to the region
           const existing = regionsMap.get(regionKey)!;
           existing.activeElections = [
@@ -565,10 +566,10 @@ export const RegionSelection: React.FC<RegionSelectionProps> = ({
           ];
         }
       });
-      
+
       // Convert map to array
       const enhancedRegions = Array.from(regionsMap.values());
-      
+
       setAvailableRegions(enhancedRegions);
       setFilteredRegions(enhancedRegions);
     };
@@ -657,13 +658,13 @@ export const RegionSelection: React.FC<RegionSelectionProps> = ({
   };
 
   return (
-    <div className="min-h-screen pt-16 pb-20 overflow-x-hidden">
+    <div className="min-h-screen pt-16 pb-20 overflow-x-hidden flex flex-col items-center">
       {/* Header Section */}
       <div style={{
         background: 'transparent',
         boxShadow: 'none',
         borderBottom: 'none'
-      }} className="mb-4">
+      }} className="mb-4 w-full">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-3">
           {/* Logout Button */}
           {onLogout && (
@@ -686,7 +687,7 @@ export const RegionSelection: React.FC<RegionSelectionProps> = ({
               </button>
             </div>
           )}
-          
+
           <div className="text-center">
             <div className="flex items-center justify-center mb-3">
               <div style={{
@@ -703,11 +704,11 @@ export const RegionSelection: React.FC<RegionSelectionProps> = ({
               Select Your Voting Region
             </h1>
             <p className="text-xs sm:text-sm text-gray-700 max-w-2xl mx-auto leading-relaxed font-medium px-4">
-              🇮🇳 Choose your constituency and election to participate in the democratic process. 
+              🇮🇳 Choose your constituency and election to participate in the democratic process.
               Ensure you select the correct region where you are registered to vote.
             </p>
           </div>
-          
+
           {/* User Info Card */}
           <div style={{
             background: 'rgba(255, 255, 255, 0.25)',
@@ -738,142 +739,11 @@ export const RegionSelection: React.FC<RegionSelectionProps> = ({
       </div>
 
       {/* Main Content */}
-      <div className="max-w-6xl mx-auto px-3 sm:px-6 lg:px-8 py-2">
+      <div className="w-full max-w-6xl mx-auto px-3 sm:px-6 lg:px-8 py-2">
         {/* Content Grid */}
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-3 lg:gap-4">
-          {/* Search and Filters - Left Panel */}
-          <div className="lg:col-span-5 xl:col-span-4">
-            <div style={{
-              background: 'rgba(255, 255, 255, 0.2)',
-              backdropFilter: 'blur(15px)',
-              WebkitBackdropFilter: 'blur(15px)',
-              boxShadow: '0 10px 25px rgba(0,0,0,0.1)',
-              border: '1px solid rgba(255,255,255,0.3)'
-            }} className="rounded-2xl overflow-hidden h-fit">
-              {/* Panel Header */}
-              <div style={{
-                background: 'transparent',
-                borderBottom: '1px solid rgba(0,0,0,0.1)'
-              }} className="px-3 sm:px-5 py-3">
-                <h2 className="text-base sm:text-lg font-bold flex items-center text-gray-800">
-                  <Search className="h-4 w-4 mr-2" />
-                  <span>Find Your Constituency</span>
-                </h2>
-                <p className="text-gray-600 mt-0.5 text-xs font-medium">
-                  🔍 Use filters below to locate your voting region
-                </p>
-              </div>
-
-              <div className="p-3 sm:p-4 space-y-3">
-                {/* Search Bar */}
-                <div>
-                  <label className="block text-xs font-semibold text-gray-800 mb-1.5">
-                    🔍 Search by Constituency Name
-                  </label>
-                  <div className="relative">
-                    <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-600" />
-                    <input
-                      type="text"
-                      value={searchTerm}
-                      onChange={(e) => setSearchTerm(e.target.value)}
-                      placeholder="Type constituency name..."
-                      style={{
-                        background: 'rgba(255,255,255,0.9)',
-                        boxShadow: '0 2px 10px rgba(255,153,51,0.1)',
-                        border: '1px solid rgba(255,153,51,0.3)'
-                      }}
-                      className="w-full pl-9 pr-3 py-2 rounded-lg 
-                               focus:ring-2 focus:ring-orange-300 focus:border-orange-400 
-                               transition-all duration-200 text-gray-800 placeholder-gray-500
-                               hover:border-orange-400 text-xs"
-                    />
-                  </div>
-                </div>
-
-                {/* State Selection */}
-                <div>
-                  <label className="block text-xs font-semibold text-gray-800 mb-1.5">
-                    🗺️ Select State/Union Territory
-                  </label>
-                  <select
-                    value={selectedState}
-                    onChange={(e) => {
-                      setSelectedState(e.target.value);
-                      setSelectedDistrict('');
-                    }}
-                    style={{
-                      background: 'rgba(255,255,255,0.9)',
-                      boxShadow: '0 2px 10px rgba(255,153,51,0.1)',
-                      border: '1px solid rgba(255,153,51,0.3)'
-                    }}
-                    className="w-full px-3 py-2 rounded-lg 
-                             focus:ring-2 focus:ring-orange-300 focus:border-orange-400 
-                             transition-all duration-200 text-gray-800
-                             hover:border-orange-400 text-xs"
-                  >
-                    <option value="">🌍 All States & UTs</option>
-                    {indianStates.map(state => (
-                      <option key={state} value={state}>{state}</option>
-                    ))}
-                  </select>
-                </div>
-
-                {/* District Selection */}
-                {selectedState && (
-                  <div>
-                    <label className="block text-xs font-semibold text-gray-800 mb-1.5">
-                      🏘️ Select District
-                    </label>
-                    <select
-                      value={selectedDistrict}
-                      onChange={(e) => setSelectedDistrict(e.target.value)}
-                      style={{
-                        background: 'rgba(255,255,255,0.9)',
-                        boxShadow: '0 2px 10px rgba(255,153,51,0.1)',
-                        border: '1px solid rgba(255,153,51,0.3)'
-                      }}
-                      className="w-full px-3 py-2 rounded-lg 
-                               focus:ring-2 focus:ring-orange-300 focus:border-orange-400 
-                               transition-all duration-200 text-gray-800
-                               hover:border-orange-400 text-xs"
-                    >
-                      <option value="">🏢 All Districts</option>
-                      {getDistrictsForSelectedState(selectedState).map(district => (
-                        <option key={district} value={district}>{district}</option>
-                      ))}
-                    </select>
-                  </div>
-                )}
-
-                {/* Results Summary */}
-                <div style={{
-                  background: 'rgba(255, 255, 255, 0.3)',
-                  backdropFilter: 'blur(10px)',
-                  WebkitBackdropFilter: 'blur(10px)',
-                  boxShadow: '0 6px 20px rgba(0,0,0,0.1)',
-                  border: '1px solid rgba(255,255,255,0.3)'
-                }} className="rounded-lg p-2.5">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center space-x-2">
-                      <div className="w-2 h-2 bg-orange-500 rounded-full animate-pulse"></div>
-                      <span className="text-xs font-semibold text-gray-800">
-                        Search Results
-                      </span>
-                    </div>
-                    <span className="bg-white/80 text-orange-600 text-xs font-semibold px-2 py-0.5 rounded-full border border-orange-300">
-                      {filteredRegions.length}
-                    </span>
-                  </div>
-                  <p className="text-gray-700 mt-0.5 font-medium text-xs">
-                    🎯 {filteredRegions.length} constituencies found
-                  </p>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Constituencies List - Right Panel */}
-          <div className="lg:col-span-7 xl:col-span-8">
+        <div className="grid grid-cols-1 gap-3 lg:gap-4">
+          {/* Constituencies List - Full Width Panel */}
+          <div>
             <div style={{
               background: 'rgba(255, 255, 255, 0.2)',
               backdropFilter: 'blur(15px)',
@@ -914,16 +784,16 @@ export const RegionSelection: React.FC<RegionSelectionProps> = ({
                     <div
                       key={region.id}
                       style={{
-                        background: selectedRegion?.id === region.id 
-                          ? 'rgba(255, 255, 255, 0.25)' 
+                        background: selectedRegion?.id === region.id
+                          ? 'rgba(255, 255, 255, 0.25)'
                           : 'rgba(255, 255, 255, 0.15)',
                         backdropFilter: 'blur(10px)',
                         WebkitBackdropFilter: 'blur(10px)',
-                        boxShadow: selectedRegion?.id === region.id 
-                          ? '0 8px 32px rgba(255,153,51,0.3)' 
+                        boxShadow: selectedRegion?.id === region.id
+                          ? '0 8px 32px rgba(255,153,51,0.3)'
                           : '0 4px 15px rgba(0,0,0,0.1)',
-                        border: selectedRegion?.id === region.id 
-                          ? '2px solid rgba(255,153,51,0.5)' 
+                        border: selectedRegion?.id === region.id
+                          ? '2px solid rgba(255,153,51,0.5)'
                           : '1px solid rgba(255,255,255,0.2)'
                       }}
                       className={`group rounded-xl p-3 cursor-pointer transition-all duration-300 
@@ -935,13 +805,12 @@ export const RegionSelection: React.FC<RegionSelectionProps> = ({
                           {/* Constituency Header */}
                           <div className="flex items-center space-x-2 mb-2">
                             <div style={{
-                              background: selectedRegion?.id === region.id 
-                                ? 'rgba(59, 130, 246, 0.9)' 
+                              background: selectedRegion?.id === region.id
+                                ? 'rgba(59, 130, 246, 0.9)'
                                 : 'rgba(156, 163, 175, 0.7)',
                               boxShadow: '0 6px 20px rgba(0,0,0,0.1)'
-                            }} className={`w-9 h-9 rounded-full flex items-center justify-center border-2 flex-shrink-0 ${
-                              selectedRegion?.id === region.id ? 'border-blue-300' : 'border-gray-300'
-                            }`}>
+                            }} className={`w-9 h-9 rounded-full flex items-center justify-center border-2 flex-shrink-0 ${selectedRegion?.id === region.id ? 'border-blue-300' : 'border-gray-300'
+                              }`}>
                               <MapPin className="h-4 w-4 text-white" />
                             </div>
                             <div className="min-w-0 flex-1">
@@ -949,7 +818,7 @@ export const RegionSelection: React.FC<RegionSelectionProps> = ({
                               <p className="text-xs font-semibold text-gray-700 truncate">{region.constituency}</p>
                             </div>
                           </div>
-                          
+
                           {/* Location Info */}
                           <div style={{
                             background: 'rgba(255,255,255,0.6)',
@@ -962,7 +831,7 @@ export const RegionSelection: React.FC<RegionSelectionProps> = ({
                               📍 <span className="font-semibold">{region.district}, {region.state}</span>
                             </p>
                           </div>
-                          
+
                           {/* Stats Row */}
                           <div className="flex items-center justify-between flex-wrap gap-2">
                             <div className="flex items-center space-x-3">
@@ -972,17 +841,16 @@ export const RegionSelection: React.FC<RegionSelectionProps> = ({
                                 <span className="ml-1 font-medium">voters</span>
                               </div>
                               <span style={{
-                                background: region.type === 'lok-sabha' 
-                                  ? 'rgba(59, 130, 246, 0.9)' 
+                                background: region.type === 'lok-sabha'
+                                  ? 'rgba(59, 130, 246, 0.9)'
                                   : 'rgba(16, 185, 129, 0.9)',
                                 boxShadow: '0 2px 10px rgba(0,0,0,0.1)'
-                              }} className={`px-2 py-0.5 rounded-full text-xs font-semibold border text-white ${
-                                region.type === 'lok-sabha' ? 'border-blue-300' : 'border-emerald-300'
-                              }`}>
+                              }} className={`px-2 py-0.5 rounded-full text-xs font-semibold border text-white ${region.type === 'lok-sabha' ? 'border-blue-300' : 'border-emerald-300'
+                                }`}>
                                 {(region.type || 'general').replace('-', ' ').toUpperCase()}
                               </span>
                             </div>
-                            
+
                             {selectedRegion?.id === region.id && (
                               <div className="flex items-center space-x-1">
                                 <CheckCircle className="h-4 w-4 text-green-600" />
@@ -1002,36 +870,36 @@ export const RegionSelection: React.FC<RegionSelectionProps> = ({
                                 {region.activeElections.slice(0, 2).map(election => {
                                   const isVoted = hasVotedInElection(election.id);
                                   const votedDate = getVotedDate(election.id);
-                                  
+
                                   return (
-                                  <div
-                                    key={election.id}
-                                    style={{
-                                      background: isVoted ? 'rgba(34, 197, 94, 0.1)' : 'rgba(255,255,255,0.9)',
-                                      boxShadow: isVoted ? '0 2px 10px rgba(34, 197, 94, 0.2)' : '0 2px 10px rgba(255,153,51,0.1)',
-                                      borderLeft: isVoted ? '3px solid #22C55E' : '3px solid #FF9933'
-                                    }}
-                                    className={`text-xs p-2 rounded-lg flex items-center justify-between border ${isVoted ? 'border-green-300' : 'border-orange-200'}`}
-                                  >
-                                    <div className="min-w-0 flex-1">
-                                      <span className="font-semibold text-gray-800 block truncate">{election.name}</span>
+                                    <div
+                                      key={election.id}
+                                      style={{
+                                        background: isVoted ? 'rgba(34, 197, 94, 0.1)' : 'rgba(255,255,255,0.9)',
+                                        boxShadow: isVoted ? '0 2px 10px rgba(34, 197, 94, 0.2)' : '0 2px 10px rgba(255,153,51,0.1)',
+                                        borderLeft: isVoted ? '3px solid #22C55E' : '3px solid #FF9933'
+                                      }}
+                                      className={`text-xs p-2 rounded-lg flex items-center justify-between border ${isVoted ? 'border-green-300' : 'border-orange-200'}`}
+                                    >
+                                      <div className="min-w-0 flex-1">
+                                        <span className="font-semibold text-gray-800 block truncate">{election.name}</span>
+                                        {isVoted ? (
+                                          <p className="text-green-600 text-xs font-medium flex items-center">
+                                            <CheckCircle className="h-3 w-3 mr-1" />
+                                            Voted on {votedDate}
+                                          </p>
+                                        ) : (
+                                          <p className="text-gray-600 text-xs font-medium">
+                                            {new Date(election.startDate).toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' })} - {new Date(election.endDate).toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' })}
+                                          </p>
+                                        )}
+                                      </div>
                                       {isVoted ? (
-                                        <p className="text-green-600 text-xs font-medium flex items-center">
-                                          <CheckCircle className="h-3 w-3 mr-1" />
-                                          Voted on {votedDate}
-                                        </p>
+                                        <span className="font-semibold px-1.5 py-0.5 rounded-full bg-green-100 border border-green-300 text-green-700 text-xs ml-2 flex-shrink-0">✓ VOTED</span>
                                       ) : (
-                                        <p className="text-gray-600 text-xs font-medium">
-                                          {new Date(election.startDate).toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' })} - {new Date(election.endDate).toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' })}
-                                        </p>
+                                        <span className="font-semibold px-1.5 py-0.5 rounded-full bg-white border border-orange-300 text-orange-600 text-xs ml-2 flex-shrink-0">{getElectionStatus(election)}</span>
                                       )}
                                     </div>
-                                    {isVoted ? (
-                                      <span className="font-semibold px-1.5 py-0.5 rounded-full bg-green-100 border border-green-300 text-green-700 text-xs ml-2 flex-shrink-0">✓ VOTED</span>
-                                    ) : (
-                                      <span className="font-semibold px-1.5 py-0.5 rounded-full bg-white border border-orange-300 text-orange-600 text-xs ml-2 flex-shrink-0">{getElectionStatus(election)}</span>
-                                    )}
-                                  </div>
                                   );
                                 })}
                               </div>
@@ -1144,7 +1012,7 @@ export const RegionSelection: React.FC<RegionSelectionProps> = ({
                       {Object.values(securityStatus).every(Boolean) ? 'VERIFIED' : 'CHECKING'}
                     </span>
                   </div>
-                  
+
                   {monitoringActive && (
                     <div style={{
                       background: 'rgba(16, 185, 129, 0.15)',
@@ -1158,7 +1026,7 @@ export const RegionSelection: React.FC<RegionSelectionProps> = ({
                   )}
                 </div>
               </div>
-              
+
               <div className="flex items-center space-x-2">
                 <button
                   onClick={goBack}
@@ -1176,7 +1044,7 @@ export const RegionSelection: React.FC<RegionSelectionProps> = ({
                   <ArrowLeft className="h-4 w-4" />
                   <span className="hidden sm:inline">Back</span>
                 </button>
-                
+
                 <button
                   onClick={handleProceed}
                   style={{

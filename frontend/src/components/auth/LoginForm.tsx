@@ -62,25 +62,37 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onLogin, loginError, onCle
     
     try {
       if (loginType === 'admin') {
-        // Admin login logic (existing)
+        // Admin login: validate credentials against real backend API
         if (!email || !adminPassword) {
           setError('Please enter admin credentials');
           return;
         }
-        
-        // Check for specific admin login IDs
-        if (email.toLowerCase() !== 'admin' && email.toLowerCase() !== 'demo-admin' && email.toLowerCase() !== 'demovote011@gmail.com') {
-          setError('Invalid admin credentials. Only approved admin accounts are accepted.');
-          return;
-        }
-        
-        const result = await onLogin(email, mobile || '', { 
-          skipOtp: loginType === 'admin', 
-          isAdmin: loginType === 'admin' 
-        });
-        
-        if (!result) {
-          setError('Admin login failed. Please use "admin" as login ID.');
+
+        try {
+          const apiUrl = import.meta.env.VITE_AUTH_API_URL || 'http://localhost:5000/api';
+          const adminResponse = await fetch(`${apiUrl}/auth/admin-login`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email: email.toLowerCase().trim(), password: adminPassword })
+          });
+
+          const adminData = await adminResponse.json();
+
+          if (!adminResponse.ok || !adminData.success) {
+            setError(adminData.error || 'Invalid admin credentials. Please try again.');
+            return;
+          }
+
+          // Store admin token for admin API calls (sent as X-Admin-Token header)
+          localStorage.setItem('votelink_admin_token', adminData.data.adminToken);
+
+          const result = await onLogin(email, '', { skipOtp: true, isAdmin: true });
+          if (!result) {
+            setError('Admin session creation failed. Please try again.');
+          }
+        } catch (err) {
+          console.error('Admin login error:', err);
+          setError('Unable to connect to server. Please ensure the backend is running.');
         }
       } else {
         // Voter login with session management

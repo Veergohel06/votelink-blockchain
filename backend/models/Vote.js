@@ -70,14 +70,27 @@ const voteSchema = new mongoose.Schema({
   timestamps: true
 });
 
-// Compound index to prevent duplicate votes per election
-// Using email + electionId is more reliable than voterID (which might not be set)
+// Compound index to prevent duplicate votes per election by email
 voteSchema.index({ userEmail: 1, electionId: 1 }, { unique: true });
+
+// Compound index to prevent duplicate votes per election by Voter ID.
+// Sparse so it only applies to documents where voterID is set and not 'NOT_SET'.
+// This is the primary guard that blocks the same voter ID from voting twice,
+// even if different email/phone accounts are used.
+voteSchema.index(
+  { voterID: 1, electionId: 1 },
+  {
+    unique: true,
+    sparse: true,
+    partialFilterExpression: {
+      voterID: { $exists: true, $nin: ['NOT_SET', ''] }
+    }
+  }
+);
 
 // Index for analytics
 voteSchema.index({ 'region.constituency': 1, votedAt: -1 });
 voteSchema.index({ candidateId: 1 });
-voteSchema.index({ voterID: 1 });
 
 const Vote = mongoose.model('Vote', voteSchema);
 

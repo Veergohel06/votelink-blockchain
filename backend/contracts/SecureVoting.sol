@@ -87,11 +87,16 @@ contract SecureVoting is ReentrancyGuard, AccessControl, Pausable {
         _grantRole(ELECTION_ADMIN_ROLE, msg.sender);
         _grantRole(AUDITOR_ROLE, msg.sender);
         
+        // Auto-start election with a 100-year duration so votes can be cast
+        // without a separate startElection() admin call.
+        uint64 startTime = uint64(block.timestamp);
+        uint64 endTime   = startTime + 100 * 365 * 24 * 60 * 60;
+        
         electionInfo = ElectionInfo({
-            startTime: 0,
-            endTime: 0,
+            startTime: startTime,
+            endTime:   endTime,
             totalVotes: 0,
-            active: false
+            active: true
         });
     }
     
@@ -198,7 +203,7 @@ contract SecureVoting is ReentrancyGuard, AccessControl, Pausable {
         
         // Create unique vote hash for this transaction
         bytes32 voteHash = keccak256(
-            abi.encodePacked(voterHash, partyHash, block.timestamp, block.difficulty)
+            abi.encodePacked(voterHash, partyHash, block.timestamp, block.prevrandao)
         );
         
         // Store vote data
@@ -356,7 +361,7 @@ contract SecureVoting is ReentrancyGuard, AccessControl, Pausable {
         uint64 timestamp
     ) external view returns (bool) {
         bytes32 expectedHash = keccak256(
-            abi.encodePacked(voterHash, partyHash, timestamp, block.difficulty)
+            abi.encodePacked(voterHash, partyHash, timestamp, block.prevrandao)
         );
         return voteHashes[voterHash] == expectedHash;
     }

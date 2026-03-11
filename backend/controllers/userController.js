@@ -1,6 +1,7 @@
 const { User, Vote, Session, AuditLog } = require('../models');
 const { sendSignupOTP, sendSigninOTPEmail } = require("../utils/emailService");
 const asynchandler = require("../utils/asynchandler");
+const blockchainVoteService = require('../services/blockchainVoteService');
 const apiError = require("../utils/apiError");
 const ApiResponse = require("../utils/apiResponse");
 const {
@@ -71,7 +72,27 @@ exports.checkRegistrationStatus = async (req, res) => {
 // Create or update user
 exports.createOrUpdateUser = async (req, res) => {
   try {
-    const { email, mobile, voterID, name, role } = req.body;
+    const {
+      email,
+      mobile,
+      voterID,
+      name,
+      role,
+      username,
+      fullname,
+      password,
+      phone,
+      address,
+      isVerified,
+      isEmailVerified,
+      isDisabledVoter,
+      region,
+      blockchainAddress,
+      voterIDImage,
+      disabilityCertificate,
+      faceData,
+      securityBreach
+    } = req.body;
 
     if (!email || !mobile || !voterID) {
       return res.status(400).json({
@@ -82,20 +103,21 @@ exports.createOrUpdateUser = async (req, res) => {
 
     const normalizedEmail = email.toLowerCase().trim();
     const cleanMobile = mobile.replace(/\D/g, '');
+    const normalizedUsername = username ? username.toLowerCase().trim() : undefined;
 
     // ============================================
     // SECURITY CHECK: Validate unique email-mobile mapping
     // ============================================
-    
+
     // Check if mobile is already registered to a different email
-    const existingUserWithMobile = await User.findOne({ 
-      mobile: cleanMobile, 
-      email: { $ne: normalizedEmail } 
+    const existingUserWithMobile = await User.findOne({
+      mobile: cleanMobile,
+      email: { $ne: normalizedEmail }
     });
-    
+
     if (existingUserWithMobile) {
       console.log(`⚠️ Security: Mobile ${cleanMobile.replace(/(\d{3})\d{4}(\d{3})/, '$1****$2')} already registered to another account`);
-      
+
       await AuditLog.create({
         action: 'registration_blocked',
         userEmail: normalizedEmail,
@@ -118,10 +140,10 @@ exports.createOrUpdateUser = async (req, res) => {
 
     // Check if email already exists with a different mobile (prevent mobile change)
     const existingUserWithEmail = await User.findOne({ email: normalizedEmail });
-    
+
     if (existingUserWithEmail && existingUserWithEmail.mobile && existingUserWithEmail.mobile !== cleanMobile) {
       console.log(`⚠️ Security: Email ${normalizedEmail} attempting to use different mobile number`);
-      
+
       await AuditLog.create({
         action: 'registration_blocked',
         userEmail: normalizedEmail,
@@ -147,12 +169,28 @@ exports.createOrUpdateUser = async (req, res) => {
     let user = await User.findOne({ email: normalizedEmail });
 
     if (user) {
-      // Update existing user
+      // Update all relevant fields from model
       user.mobile = cleanMobile;
       user.voterID = voterID.toUpperCase();
-      if (name) user.name = name;
-      if (role) user.role = role;
+      if (name !== undefined) user.name = name;
+      if (role !== undefined) user.role = role;
+      if (normalizedUsername !== undefined) user.username = normalizedUsername;
+      if (fullname !== undefined) user.fullname = fullname;
+      if (password !== undefined) user.password = password;
+      if (phone !== undefined) user.phone = phone;
+      if (address !== undefined) user.address = address;
+      if (isVerified !== undefined) user.isVerified = isVerified;
+      if (isEmailVerified !== undefined) user.isEmailVerified = isEmailVerified;
+      if (isDisabledVoter !== undefined) user.isDisabledVoter = isDisabledVoter;
+      if (region !== undefined) user.region = region;
+      if (blockchainAddress !== undefined) user.blockchainAddress = blockchainAddress;
+      if (voterIDImage !== undefined) user.voterIDImage = voterIDImage;
+      if (disabilityCertificate !== undefined) user.disabilityCertificate = disabilityCertificate;
+      if (faceData !== undefined) user.faceData = faceData;
+      if (securityBreach !== undefined) user.securityBreach = securityBreach;
       user.lastLogin = new Date();
+      user.ipAddress = req.ip;
+      user.deviceInfo = req.get('User-Agent');
       await user.save();
 
       await AuditLog.create({
@@ -172,7 +210,23 @@ exports.createOrUpdateUser = async (req, res) => {
           voterID: user.voterID,
           name: user.name,
           hasVoted: user.hasVoted,
-          role: user.role
+          role: user.role,
+          username: user.username,
+          fullname: user.fullname,
+          phone: user.phone,
+          address: user.address,
+          isVerified: user.isVerified,
+          isEmailVerified: user.isEmailVerified,
+          isDisabledVoter: user.isDisabledVoter,
+          region: user.region,
+          blockchainAddress: user.blockchainAddress,
+          voterIDImage: user.voterIDImage,
+          disabilityCertificate: user.disabilityCertificate,
+          faceData: user.faceData,
+          securityBreach: user.securityBreach,
+          lastLogin: user.lastLogin,
+          ipAddress: user.ipAddress,
+          deviceInfo: user.deviceInfo
         }
       });
     }
@@ -184,6 +238,20 @@ exports.createOrUpdateUser = async (req, res) => {
       voterID: voterID.toUpperCase(),
       name: name || '',
       role: role || 'voter',
+      username: normalizedUsername,
+      fullname: fullname,
+      password: password,
+      phone: phone,
+      address: address,
+      isVerified: isVerified,
+      isEmailVerified: isEmailVerified,
+      isDisabledVoter: isDisabledVoter,
+      region: region,
+      blockchainAddress: blockchainAddress,
+      voterIDImage: voterIDImage,
+      disabilityCertificate: disabilityCertificate,
+      faceData: faceData,
+      securityBreach: securityBreach,
       lastLogin: new Date(),
       ipAddress: req.ip,
       deviceInfo: req.get('User-Agent')
@@ -206,12 +274,28 @@ exports.createOrUpdateUser = async (req, res) => {
         voterID: user.voterID,
         name: user.name,
         hasVoted: user.hasVoted,
-        role: user.role
+        role: user.role,
+        username: user.username,
+        fullname: user.fullname,
+        phone: user.phone,
+        address: user.address,
+        isVerified: user.isVerified,
+        isEmailVerified: user.isEmailVerified,
+        isDisabledVoter: user.isDisabledVoter,
+        region: user.region,
+        blockchainAddress: user.blockchainAddress,
+        voterIDImage: user.voterIDImage,
+        disabilityCertificate: user.disabilityCertificate,
+        faceData: user.faceData,
+        securityBreach: user.securityBreach,
+        lastLogin: user.lastLogin,
+        ipAddress: user.ipAddress,
+        deviceInfo: user.deviceInfo
       }
     });
   } catch (error) {
     console.error('Create/Update user error:', error);
-    
+
     if (error.code === 11000) {
       return res.status(409).json({
         success: false,
@@ -354,7 +438,7 @@ exports.recordVote = async (req, res) => {
     if (voterID && voterID !== 'Not Set') {
       user = await User.findOne({ voterID: voterID.toUpperCase() });
     }
-    
+
     // If not found by voterID, try by email
     if (!user && userEmail) {
       user = await User.findOne({ email: userEmail.toLowerCase() });
@@ -367,10 +451,32 @@ exports.recordVote = async (req, res) => {
       });
     }
 
-    // Check if user has already voted in THIS specific election
-    const existingVote = await Vote.findOne({ 
+    // Resolve the effective Voter ID for this request
+    const effectiveVoterID = (user.voterID || voterID || '').toUpperCase().trim() || null;
+    const resolvedElectionIdForDupCheck = electionId || 'default_election';
+
+    // ── PRIMARY GUARD: block by Voter ID (across all accounts) ────────────
+    // This prevents a voter from casting more than one vote per election even
+    // if they register/login with a different email or phone number.
+    if (effectiveVoterID && effectiveVoterID !== 'NOT_SET') {
+      const existingVoteByVoterId = await Vote.findOne({
+        voterID: effectiveVoterID,
+        electionId: resolvedElectionIdForDupCheck
+      });
+      if (existingVoteByVoterId) {
+        console.log(`🚫 Duplicate vote blocked by Voter ID: ${effectiveVoterID} already voted in election ${resolvedElectionIdForDupCheck}`);
+        return res.status(403).json({
+          success: false,
+          error: 'VOTER_ID_ALREADY_VOTED',
+          message: 'This Voter ID has already been used to cast a vote in this election. Each Voter ID may only be used once per election.'
+        });
+      }
+    }
+
+    // ── SECONDARY GUARD: block by email (same account, same election) ─────
+    const existingVote = await Vote.findOne({
       userEmail: user.email,
-      electionId: electionId || 'default_election'
+      electionId: resolvedElectionIdForDupCheck
     });
 
     if (existingVote) {
@@ -385,6 +491,69 @@ exports.recordVote = async (req, res) => {
       console.log('⚠️ User hasVoted flag is set but no vote record found for this election');
     }
 
+    // ============================================
+    // ELECTION TIME WINDOW VALIDATION
+    // Reject votes outside the admin-configured start/end times
+    // ============================================
+    const Election = require('../models/Election');
+    const resolvedElectionId = electionId || 'default_election';
+
+    if (resolvedElectionId !== 'default_election') {
+      try {
+        const election = await Election.findById(resolvedElectionId);
+        if (election) {
+          const now = new Date();
+          const electionStart = new Date(election.startDate);
+          const electionEnd = new Date(election.endDate);
+
+          if (now < electionStart) {
+            console.log(`🚫 Vote rejected: Election "${election.title}" has not started yet. Start: ${electionStart.toISOString()}, Now: ${now.toISOString()}`);
+            return res.status(403).json({
+              success: false,
+              error: 'ELECTION_NOT_STARTED',
+              message: `Voting has not started yet. The election "${election.title}" begins on ${electionStart.toLocaleString()}.`,
+              electionStart: electionStart.toISOString(),
+              electionEnd: electionEnd.toISOString(),
+              serverTime: now.toISOString()
+            });
+          }
+
+          if (now > electionEnd) {
+            console.log(`🚫 Vote rejected: Election "${election.title}" has ended. End: ${electionEnd.toISOString()}, Now: ${now.toISOString()}`);
+            return res.status(403).json({
+              success: false,
+              error: 'ELECTION_ENDED',
+              message: `The election period has ended. Voting for "${election.title}" closed on ${electionEnd.toLocaleString()}.`,
+              electionStart: electionStart.toISOString(),
+              electionEnd: electionEnd.toISOString(),
+              serverTime: now.toISOString()
+            });
+          }
+
+          console.log(`✅ Election time window valid: "${election.title}" is active (${electionStart.toISOString()} to ${electionEnd.toISOString()})`);
+        }
+      } catch (electionLookupError) {
+        console.warn('⚠️ Could not validate election time window:', electionLookupError.message);
+        // Continue with vote recording — don't block if election lookup fails
+      }
+    }
+
+    // Attempt blockchain recording via admin key (non-fatal if node is offline)
+    let finalBlockchainTxHash = blockchainTxHash || null;
+    let blockchainConfirmed = !!blockchainTxHash;
+
+    if (!finalBlockchainTxHash) {
+      try {
+        const effectiveVoterId = user.voterID || voterID || 'NOT_SET';
+        const bcReceipt = await blockchainVoteService.recordVote(effectiveVoterId, candidateId);
+        finalBlockchainTxHash = bcReceipt.transactionHash;
+        blockchainConfirmed = true;
+        console.log('✅ Backend blockchain recording succeeded:', finalBlockchainTxHash);
+      } catch (bcError) {
+        console.warn('⚠️ Backend blockchain recording failed (node may not be running):', bcError.message);
+      }
+    }
+
     // Record vote - use the actual voterID from user record
     const vote = await Vote.create({
       voterID: user.voterID || voterID || 'NOT_SET',
@@ -394,8 +563,8 @@ exports.recordVote = async (req, res) => {
       candidateName,
       partyName,
       region,
-      blockchainTxHash: blockchainTxHash || null,
-      blockchainConfirmed: !!blockchainTxHash,
+      blockchainTxHash: finalBlockchainTxHash,
+      blockchainConfirmed,
       ipAddress: req.ip,
       deviceInfo: req.get('User-Agent'),
       votedAt: new Date()
@@ -418,7 +587,7 @@ exports.recordVote = async (req, res) => {
         candidateName,
         partyName,
         constituency: region.constituency,
-        blockchainTxHash,
+        blockchainTxHash: finalBlockchainTxHash,
         electionId
       },
       status: 'success',
@@ -430,7 +599,9 @@ exports.recordVote = async (req, res) => {
       success: true,
       message: 'Vote recorded successfully',
       voteId: vote._id,
-      userId: user._id
+      userId: user._id,
+      blockchainTxHash: finalBlockchainTxHash,
+      blockchainConfirmed
     });
   } catch (error) {
     console.error('Record vote error:', error);
@@ -520,7 +691,7 @@ exports.getAllUsers = async (req, res) => {
 
     // Build filter
     const filter = {};
-    
+
     if (search) {
       filter.$or = [
         { email: { $regex: search, $options: 'i' } },
@@ -529,11 +700,11 @@ exports.getAllUsers = async (req, res) => {
         { mobile: { $regex: search, $options: 'i' } }
       ];
     }
-    
+
     if (hasVoted !== undefined) {
       filter.hasVoted = hasVoted === 'true';
     }
-    
+
     if (role) {
       filter.role = role;
     }
@@ -626,7 +797,7 @@ exports.getUserDetails = async (req, res) => {
     // Get user's voting history if they voted
     let voteInfo = null;
     if (user.hasVoted) {
-      voteInfo = await Vote.findOne({ 
+      voteInfo = await Vote.findOne({
         $or: [
           { userEmail: user.email },
           { voterID: user.voterID }
@@ -680,7 +851,24 @@ exports.getUserDetails = async (req, res) => {
 exports.updateUser = async (req, res) => {
   try {
     const { identifier } = req.params;
-    const { name, role, isDisabledVoter, region, blockchainAddress } = req.body;
+    const {
+      name,
+      role,
+      username,
+      fullname,
+      password,
+      phone,
+      address,
+      isVerified,
+      isEmailVerified,
+      isDisabledVoter,
+      region,
+      blockchainAddress,
+      voterIDImage,
+      disabilityCertificate,
+      faceData,
+      securityBreach
+    } = req.body;
 
     const user = await User.findOne({
       $or: [
@@ -697,24 +885,37 @@ exports.updateUser = async (req, res) => {
       });
     }
 
-    // Update allowed fields
+    // Update all relevant fields from model
     if (name !== undefined) user.name = name;
     if (role !== undefined) user.role = role;
+    if (username !== undefined) user.username = username.toLowerCase();
+    if (fullname !== undefined) user.fullname = fullname;
+    if (password !== undefined) user.password = password;
+    if (phone !== undefined) user.phone = phone;
+    if (address !== undefined) user.address = address;
+    if (isVerified !== undefined) user.isVerified = isVerified;
+    if (isEmailVerified !== undefined) user.isEmailVerified = isEmailVerified;
     if (isDisabledVoter !== undefined) user.isDisabledVoter = isDisabledVoter;
     if (region !== undefined) user.region = region;
     if (blockchainAddress !== undefined) user.blockchainAddress = blockchainAddress;
+    if (voterIDImage !== undefined) user.voterIDImage = voterIDImage;
+    if (disabilityCertificate !== undefined) user.disabilityCertificate = disabilityCertificate;
+    if (faceData !== undefined) user.faceData = faceData;
+    if (securityBreach !== undefined) user.securityBreach = securityBreach;
 
+    // Save the changes to the database
     await user.save();
 
     await AuditLog.create({
       action: 'user_updated',
       userEmail: user.email,
       voterID: user.voterID,
-      details: { updatedFields: { name, role, isDisabledVoter, region, blockchainAddress } },
+      details: { updatedFields: { name, role, isDisabledVoter, region, blockchainAddress, isVerified, isEmailVerified } },
       status: 'success',
       ipAddress: req.ip,
       deviceInfo: req.get('User-Agent')
     });
+
 
     res.json({
       success: true,
@@ -994,10 +1195,10 @@ exports.verifyEmailOTP = asynchandler(async (req, res) => {
     // Delete the temporary record first
     await User.deleteOne({ _id: tempUser._id });
 
-    // Cleanup - Delete ANY other records with this email or username
+    // Cleanup - Delete ANY other records with this email or username except verified
     console.log("Cleaning up before registration for:", { email, username });
-    await User.deleteMany({ email: email });
-    await User.deleteMany({ username: username.toLowerCase() });
+    await User.deleteMany({ email: email, isEmailVerified: { $ne: true } });
+    await User.deleteMany({ username: username.toLowerCase(), isEmailVerified: { $ne: true } });
 
     // Set default address values
     const userAddress = {
@@ -1021,7 +1222,11 @@ exports.verifyEmailOTP = asynchandler(async (req, res) => {
       phone: phone || `user_${Date.now()}`,
       address: userAddress,
       avatar: `https://ui-avatars.com/api/?name=${encodeURIComponent(username)}&background=6366f1&color=ffffff&size=200`,
-      isEmailVerified: true, // Email is verified since they passed OTP
+      isEmailVerified: true,
+      isVerified: true,
+      lastLogin: new Date(),
+      ipAddress: req.ip,
+      deviceInfo: req.get('User-Agent')
     });
 
     // Generate tokens
@@ -1041,9 +1246,7 @@ exports.verifyEmailOTP = asynchandler(async (req, res) => {
     };
 
     // Return user without password
-    const createdUser = await User.findById(newUser._id).select(
-      "-password -refresh_token"
-    );
+    const createdUser = await User.findOne({ email, isEmailVerified: true }).select("-password -refresh_token");
 
     return res
       .status(201)

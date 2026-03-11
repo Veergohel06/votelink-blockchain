@@ -1,28 +1,23 @@
 import { useState, useEffect } from 'react';
 import { i18nService } from '../services/i18nService';
 
+// Initialize exactly once at module load — not on every component mount
+i18nService.initializeLanguage();
+
 export const useTranslation = () => {
   const [currentLanguage, setCurrentLanguage] = useState('en');
   const [, forceUpdate] = useState({});
 
   useEffect(() => {
-    // Initialize language
-    i18nService.initializeLanguage();
     setCurrentLanguage(i18nService.getCurrentLanguage());
-    
-    // Listen for language changes
+
     const handleLanguageChange = () => {
       setCurrentLanguage(i18nService.getCurrentLanguage());
-      // Force re-render
       forceUpdate({});
     };
 
-    // Add event listener for language changes
     window.addEventListener('languageChanged', handleLanguageChange);
-    
-    return () => {
-      window.removeEventListener('languageChanged', handleLanguageChange);
-    };
+    return () => window.removeEventListener('languageChanged', handleLanguageChange);
   }, []);
 
   const t = (key: string): string => {
